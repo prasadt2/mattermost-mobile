@@ -1,12 +1,15 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {Keyboard, NativeModules, View} from 'react-native';
-import DeviceInfo from 'react-native-device-info';
+import {Dimensions, Keyboard, NativeModules, View} from 'react-native';
 import SafeArea from 'react-native-safe-area';
-import Orientation from 'react-native-orientation';
+
+import EventEmitter from 'mattermost-redux/utils/event_emitter';
+
+import {DeviceTypes} from 'app/constants';
+import mattermostManaged from 'app/mattermost_managed';
 
 const {StatusBarManager} = NativeModules;
 
@@ -22,17 +25,15 @@ export default class SafeAreaIos extends PureComponent {
         navBarBackgroundColor: PropTypes.string,
         navigator: PropTypes.object,
         headerComponent: PropTypes.node,
-        theme: PropTypes.object.isRequired
+        theme: PropTypes.object.isRequired,
     };
 
     static defaultProps = {
-        keyboardOffset: 0
+        keyboardOffset: 0,
     };
 
     constructor(props) {
         super(props);
-
-        this.isX = DeviceInfo.getModel() === 'iPhone X';
 
         if (props.navigator) {
             props.navigator.setOnNavigatorEvent(this.onNavigatorEvent);
@@ -41,9 +42,12 @@ export default class SafeAreaIos extends PureComponent {
         this.state = {
             keyboard: false,
             safeAreaInsets: {
-                top: 20, left: 0, bottom: 15, right: 0
+                top: DeviceTypes.IS_IPHONE_X ? 44 : 20,
+                left: 0,
+                bottom: DeviceTypes.IS_IPHONE_X || mattermostManaged.hasSafeAreaInsets ? 20 : 0,
+                right: 0,
             },
-            statusBarHeight: 20
+            statusBarHeight: 20,
         };
     }
 
@@ -54,7 +58,8 @@ export default class SafeAreaIos extends PureComponent {
     }
 
     componentDidMount() {
-        Orientation.addOrientationListener(this.getSafeAreaInsets);
+        Dimensions.addEventListener('change', this.getSafeAreaInsets);
+        EventEmitter.on('update_safe_area_view', this.getSafeAreaInsets);
         this.keyboardDidShowListener = Keyboard.addListener('keyboardWillShow', this.keyboardWillShow);
         this.keyboardDidHideListener = Keyboard.addListener('keyboardWillHide', this.keyboardWillHide);
         this.getStatusBarHeight();
@@ -62,7 +67,8 @@ export default class SafeAreaIos extends PureComponent {
 
     componentWillUnmount() {
         this.mounted = false;
-        Orientation.removeOrientationListener(this.getSafeAreaInsets);
+        Dimensions.removeEventListener('change', this.getSafeAreaInsets);
+        EventEmitter.off('update_safe_area_view', this.getSafeAreaInsets);
         this.keyboardDidShowListener.remove();
         this.keyboardDidHideListener.remove();
         this.mounted = false;
@@ -85,9 +91,10 @@ export default class SafeAreaIos extends PureComponent {
     getSafeAreaInsets = () => {
         this.getStatusBarHeight();
 
-        if (this.isX) {
+        if (DeviceTypes.IS_IPHONE_X || mattermostManaged.hasSafeAreaInsets) {
             SafeArea.getSafeAreaInsetsForRootView().then((result) => {
                 const {safeAreaInsets} = result;
+
                 if (this.mounted) {
                     this.setState({safeAreaInsets});
                 }
@@ -127,7 +134,7 @@ export default class SafeAreaIos extends PureComponent {
         }
 
         let top = safeAreaInsets.top;
-        if (forceTop && this.isX && !hideTopBar) {
+        if (forceTop && DeviceTypes.IS_IPHONE_X && !hideTopBar) {
             top = forceTop;
         }
 
@@ -137,7 +144,7 @@ export default class SafeAreaIos extends PureComponent {
                     style={{
                         backgroundColor: topColor,
                         height: top,
-                        zIndex: 10
+                        zIndex: 10,
                     }}
                 >
                     {headerComponent}
@@ -150,7 +157,7 @@ export default class SafeAreaIos extends PureComponent {
                 style={{
                     backgroundColor: topColor,
                     paddingTop: top,
-                    zIndex: 10
+                    zIndex: 10,
                 }}
             />
         );
@@ -171,7 +178,7 @@ export default class SafeAreaIos extends PureComponent {
         }
 
         let offset = 0;
-        if (keyboardOffset && this.isX) {
+        if (keyboardOffset && mattermostManaged.hasSafeAreaInsets) {
             offset = keyboardOffset;
         }
 
@@ -179,12 +186,12 @@ export default class SafeAreaIos extends PureComponent {
             <View
                 style={{
                     flex: 1,
-                    backgroundColor: bgColor
+                    backgroundColor: bgColor,
                 }}
             >
                 {this.renderTopBar()}
                 {children}
-                <View style={{height: keyboard ? offset : safeAreaInsets.bottom - 15, backgroundColor: bottomColor}}>
+                <View style={{height: keyboard ? offset : safeAreaInsets.bottom, backgroundColor: bottomColor}}>
                     {footerComponent}
                 </View>
             </View>

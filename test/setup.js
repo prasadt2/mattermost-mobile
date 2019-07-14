@@ -1,78 +1,116 @@
-// Copyright (c) 2017 Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
-// Setup recommendation from the following blog:
-// https://blog.addjam.com/testing-react-native-with-mocha-and-enzyme-6b77cd9e52a1#.2awpwqwwb
+import {configure} from 'enzyme';
+import Adapter from 'enzyme-adapter-react-16';
+configure({adapter: new Adapter()});
 
-/* eslint-disable */
+/* eslint-disable no-console */
 
-import fs from 'fs';
-import path from 'path';
-import register from 'babel-core/register';
-import mockery from 'mockery';
-import MockAsyncStorage from 'mock-async-storage';
-
-mockery.enable({
-    warnOnReplace: false,
-    warnOnUnregistered: false
+jest.mock('NativeModules', () => {
+    return {
+        UIManager: {
+            RCTView: {
+                directEventTypes: {},
+            },
+        },
+        BlurAppScreen: () => true,
+        MattermostManaged: {
+            getConfig: jest.fn(),
+        },
+        PlatformConstants: {
+            forceTouchAvailable: false,
+        },
+        RNGestureHandlerModule: {
+            State: {
+                BEGAN: 'BEGAN',
+                FAILED: 'FAILED',
+                ACTIVE: 'ACTIVE',
+                END: 'END',
+            },
+        },
+    };
 });
-mockery.registerMock('react-native', {
-    Dimensions: {
-        get: () => {
-            return {width: 0, height: 0}
-        }
-    },
-    AsyncStorage: new MockAsyncStorage(),
-    NativeModules: {},
-    NetInfo: {
-        isConnected: {
-            addEventListener: () => true,
-            fetch: () => Promise.resolve(true)
-        }
-    },
-    Platform: {
-        OS: 'ios'
+jest.mock('NativeEventEmitter');
+
+jest.mock('react-native-device-info', () => {
+    return {
+        getVersion: () => '0.0.0',
+        getBuildNumber: () => '0',
+        getModel: () => 'iPhone X',
+        isTablet: () => false,
+    };
+});
+
+jest.mock('react-native-cookies', () => ({
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    openURL: jest.fn(),
+    canOpenURL: jest.fn(),
+    getInitialURL: jest.fn(),
+}));
+
+let logs;
+let warns;
+let errors;
+beforeAll(() => {
+    console.originalLog = console.log;
+    console.log = jest.fn((...params) => {
+        console.originalLog(...params);
+        logs.push(params);
+    });
+
+    console.originalWarn = console.warn;
+    console.warn = jest.fn((...params) => {
+        console.originalWarn(...params);
+        warns.push(params);
+    });
+
+    console.originalError = console.error;
+    console.error = jest.fn((...params) => {
+        console.originalError(...params);
+        errors.push(params);
+    });
+});
+
+beforeEach(() => {
+    logs = [];
+    warns = [];
+    errors = [];
+});
+
+afterEach(() => {
+    if (logs.length > 0 || warns.length > 0 || errors.length > 0) {
+        throw new Error('Unexpected console logs' + logs + warns + errors);
     }
 });
-mockery.registerMock('react-native-device-info', {
-    getDeviceLocale() {
-        return 'en';
-    },
-    getBuildNumber: () => true,
-    getVersion: () => true
-});
-mockery.registerMock('react-native-sentry', {
-    Sentry: {
-        captureBreadcrumb() {}
-    }
-});
-mockery.registerMock('react-native-fetch-blob', {
-    RNFetchBlob: {
-        DocumentDir: ''
-    },
+
+jest.mock('rn-fetch-blob', () => ({
     fs: {
         dirs: {
-            DocumentDir: '',
-            CacheDir: ''
-        }
-    }
-});
-// Ignore all node_modules except these
-const modulesToCompile = [
-    'react-native'
-].map((moduleName) => new RegExp(`/node_modules/${moduleName}`));
+            DocumentDir: () => jest.fn(),
+            CacheDir: () => jest.fn(),
+        },
+        exists: jest.fn(),
+        existsWithDiffExt: jest.fn(),
+        unlink: jest.fn(),
+        mv: jest.fn(),
+    },
+    fetch: jest.fn(),
+    config: jest.fn(),
+}));
 
-const rcPath = path.join(__dirname, '..', '.babelrc');
-const source = fs.readFileSync(rcPath).toString();
-const config = JSON.parse(source);
-config.ignore = function(filename) {
-    if (!(/\/node_modules\//).test(filename)) {
-        return false;
-    }
+jest.mock('rn-fetch-blob/fs', () => ({
+    dirs: {
+        DocumentDir: () => jest.fn(),
+        CacheDir: () => jest.fn(),
+    },
+    exists: jest.fn(),
+    existsWithDiffExt: jest.fn(),
+    unlink: jest.fn(),
+    mv: jest.fn(),
+}));
 
-    const matches = modulesToCompile.filter((regex) => regex.test(filename));
-    const shouldIgnore = matches.length === 0;
-    return shouldIgnore;
+global.requestAnimationFrame = (callback) => {
+    setTimeout(callback, 0);
 };
-
-register(config);

@@ -1,13 +1,16 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import PropTypes from 'prop-types';
 import React from 'react';
 import {
+    BackHandler,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
-    View
+    TextInput,
+    View,
 } from 'react-native';
 
 import {getCodeFont} from 'app/utils/markdown';
@@ -17,14 +20,27 @@ export default class Code extends React.PureComponent {
     static propTypes = {
         navigator: PropTypes.object.isRequired,
         theme: PropTypes.object.isRequired,
-        content: PropTypes.string.isRequired
+        content: PropTypes.string.isRequired,
     };
+
+    componentDidMount() {
+        BackHandler.addEventListener('hardwareBackPress', this.handleAndroidBack);
+    }
 
     componentWillReceiveProps(nextProps) {
         if (this.props.theme !== nextProps.theme) {
             setNavigatorStyles(this.props.navigator, nextProps.theme);
         }
     }
+
+    componentWillUnmount() {
+        BackHandler.removeEventListener('hardwareBackPress', this.handleAndroidBack);
+    }
+
+    handleAndroidBack = () => {
+        this.props.navigator.pop();
+        return true;
+    };
 
     countLines = (content) => {
         return content.split('\n').length;
@@ -48,6 +64,27 @@ export default class Code extends React.PureComponent {
             lineNumbersStyle = style.lineNumbers;
         }
 
+        let textComponent;
+        if (Platform.OS === 'ios') {
+            textComponent = (
+                <TextInput
+                    editable={false}
+                    multiline={true}
+                    value={this.props.content}
+                    style={[style.codeText]}
+                />
+            );
+        } else {
+            textComponent = (
+                <Text
+                    selectable={true}
+                    style={style.codeText}
+                >
+                    {this.props.content}
+                </Text>
+            );
+        }
+
         return (
             <ScrollView
                 style={style.scrollContainer}
@@ -63,9 +100,7 @@ export default class Code extends React.PureComponent {
                     contentContainerStyle={style.code}
                     horizontal={true}
                 >
-                    <Text style={style.codeText}>
-                        {this.props.content}
-                    </Text>
+                    {textComponent}
                 </ScrollView>
             </ScrollView>
         );
@@ -75,11 +110,11 @@ export default class Code extends React.PureComponent {
 const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         scrollContainer: {
-            flex: 1
+            flex: 1,
         },
         container: {
             minHeight: '100%',
-            flexDirection: 'row'
+            flexDirection: 'row',
         },
         lineNumbers: {
             alignItems: 'center',
@@ -89,30 +124,43 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
             flexDirection: 'column',
             justifyContent: 'flex-start',
             paddingHorizontal: 6,
-            paddingVertical: 4
+            paddingVertical: 4,
         },
         lineNumbersRight: {
-            alignItems: 'flex-end'
+            alignItems: 'flex-end',
         },
         lineNumbersText: {
             color: changeOpacity(theme.centerChannelColor, 0.5),
             fontSize: 12,
-            lineHeight: 18
+            lineHeight: 18,
         },
         codeContainer: {
             flexGrow: 0,
             flexShrink: 1,
-            width: '100%'
+            width: '100%',
         },
         code: {
             paddingHorizontal: 6,
-            paddingVertical: 4
+            ...Platform.select({
+                android: {
+                    paddingVertical: 4,
+                },
+                ios: {
+                    top: -4,
+                },
+            }),
         },
         codeText: {
             color: changeOpacity(theme.centerChannelColor, 0.65),
             fontFamily: getCodeFont(),
             fontSize: 12,
-            lineHeight: 18
-        }
+            lineHeight: 18,
+            ...Platform.select({
+                ios: {
+                    margin: 0,
+                    padding: 0,
+                },
+            }),
+        },
     };
 });

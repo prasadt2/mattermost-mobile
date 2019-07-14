@@ -1,8 +1,11 @@
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {
     Animated,
-    Text
+    Platform,
+    Text,
 } from 'react-native';
 
 import FormattedText from 'app/components/formatted_text';
@@ -13,11 +16,15 @@ const {View: AnimatedView} = Animated;
 export default class Typing extends PureComponent {
     static propTypes = {
         theme: PropTypes.object.isRequired,
-        typing: PropTypes.array.isRequired
+        typing: PropTypes.array.isRequired,
+    };
+
+    static defaultProps = {
+        typing: [],
     };
 
     state = {
-        typingHeight: new Animated.Value(0)
+        typingHeight: new Animated.Value(0),
     }
 
     componentWillReceiveProps(nextProps) {
@@ -29,11 +36,13 @@ export default class Typing extends PureComponent {
     }
 
     animateTyping = (show = false) => {
-        const height = show ? 20 : 0;
+        const [height, duration] = show ?
+            [20, 200] :
+            [0, 400];
 
         Animated.timing(this.state.typingHeight, {
             toValue: height,
-            duration: 200
+            duration,
         }).start();
     }
 
@@ -51,7 +60,7 @@ export default class Typing extends PureComponent {
                     id='msg_typing.isTyping'
                     defaultMessage='{user} is typing...'
                     values={{
-                        user: nextTyping[0]
+                        user: nextTyping[0],
                     }}
                 />
             );
@@ -63,7 +72,7 @@ export default class Typing extends PureComponent {
                     defaultMessage='{users} and {last} are typing...'
                     values={{
                         users: (nextTyping.join(', ')),
-                        last
+                        last,
                     }}
                 />
             );
@@ -94,9 +103,16 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
             paddingLeft: 10,
             paddingTop: 3,
             fontSize: 11,
-            marginBottom: 5,
+            ...Platform.select({
+                android: {
+                    marginBottom: 5,
+                },
+                ios: {
+                    marginBottom: 2,
+                },
+            }),
             color: theme.centerChannelColor,
-            backgroundColor: 'transparent'
-        }
+            backgroundColor: 'transparent',
+        },
     };
 });

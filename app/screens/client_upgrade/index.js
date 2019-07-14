@@ -1,3 +1,5 @@
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
 
@@ -18,7 +20,7 @@ function mapStateToProps(state) {
         forceUpgrade,
         latestVersion,
         minVersion,
-        theme: getTheme(state)
+        theme: getTheme(state),
     };
 }
 
@@ -26,8 +28,8 @@ function mapDispatchToProps(dispatch) {
     return {
         actions: bindActionCreators({
             logError,
-            setLastUpgradeCheck
-        }, dispatch)
+            setLastUpgradeCheck,
+        }, dispatch),
     };
 }
 

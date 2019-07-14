@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import PropTypes from 'prop-types';
 import React, {PureComponent} from 'react';
@@ -27,7 +27,7 @@ export default class SearchBarIos extends PureComponent {
         placeholder: PropTypes.string,
         cancelTitle: PropTypes.oneOfType([
             PropTypes.string,
-            PropTypes.object
+            PropTypes.object,
         ]),
         returnKeyType: PropTypes.string,
         keyboardType: PropTypes.string,
@@ -35,7 +35,10 @@ export default class SearchBarIos extends PureComponent {
         inputHeight: PropTypes.number,
         inputBorderRadius: PropTypes.number,
         blurOnSubmit: PropTypes.bool,
-        value: PropTypes.string
+        value: PropTypes.string,
+        leftComponent: PropTypes.element,
+        searchIconCollapsedMargin: PropTypes.number,
+        searchIconExpandedMargin: PropTypes.number,
     };
 
     static defaultProps = {
@@ -45,7 +48,10 @@ export default class SearchBarIos extends PureComponent {
         onFocus: () => true,
         onBlur: () => true,
         onSelectionChange: () => true,
-        blurOnSubmit: true
+        blurOnSubmit: true,
+        leftComponent: null,
+        searchIconCollapsedMargin: 10,
+        searchIconExpandedMargin: 10,
     };
 
     cancel = () => {
@@ -100,8 +106,6 @@ export default class SearchBarIos extends PureComponent {
                 ref='search'
                 placeholderCollapsedMargin={33}
                 placeholderExpandedMargin={33}
-                searchIconCollapsedMargin={10}
-                searchIconExpandedMargin={10}
                 shadowVisible={false}
                 onCancel={this.onCancel}
                 onChangeText={this.onChangeText}

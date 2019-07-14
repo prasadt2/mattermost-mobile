@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -10,7 +10,7 @@ import {
     StyleSheet,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 
 import FormattedText from 'app/components/formatted_text';
@@ -29,7 +29,7 @@ const IMAGE_SIZE = 33;
 export default class Notification extends PureComponent {
     static propTypes = {
         actions: PropTypes.shape({
-            loadFromPushNotification: PropTypes.func.isRequired
+            loadFromPushNotification: PropTypes.func.isRequired,
         }).isRequired,
         channel: PropTypes.object,
         config: PropTypes.object,
@@ -38,7 +38,7 @@ export default class Notification extends PureComponent {
         teammateNameDisplay: PropTypes.string,
         navigator: PropTypes.object,
         theme: PropTypes.object.isRequired,
-        user: PropTypes.object
+        user: PropTypes.object,
     };
 
     notificationTapped = () => {
@@ -55,7 +55,7 @@ export default class Notification extends PureComponent {
                 }
 
                 navigator.popToRoot({
-                    animated: false
+                    animated: false,
                 });
             }
         });
@@ -72,7 +72,7 @@ export default class Notification extends PureComponent {
             />
         );
 
-        if (data.from_webhook && config.EnablePostIconOverride === 'true') {
+        if (data.from_webhook && config.EnablePostIconOverride === 'true' && data.use_user_icon !== 'true') {
             const wsIcon = data.override_icon_url ? {uri: data.override_icon_url} : webhookIcon;
             icon = (
                 <Image
@@ -92,8 +92,28 @@ export default class Notification extends PureComponent {
         return icon;
     };
 
-    getNotificationTitle = (titleText) => {
+    getNotificationTitle = (notification) => {
         const {channel} = this.props;
+        const {message, data} = notification;
+
+        if (data.version === 'v2') {
+            if (data.channel_name) {
+                return (
+                    <Text
+                        numberOfLines={1}
+                        ellipsizeMode='tail'
+                        style={style.title}
+                    >
+                        {data.channel_name}
+                    </Text>
+                );
+            }
+
+            return null;
+        }
+
+        const msg = message.split(':');
+        const titleText = msg.shift();
 
         let title = (
             <Text
@@ -165,14 +185,20 @@ export default class Notification extends PureComponent {
 
     render() {
         const {deviceWidth, notification} = this.props;
-        const {message} = notification;
+        const {data, message} = notification;
 
         if (message) {
-            const msg = message.split(':');
-            const titleText = msg.shift();
-            const messageText = msg.join('').trim();
+            let messageText;
+            if (data.version !== 'v2') {
+                const msg = message.split(':');
+                messageText = msg.join('').trim();
+            } else if (Platform.OS === 'ios') {
+                messageText = message.body || message;
+            } else {
+                messageText = message;
+            }
 
-            const title = this.getNotificationTitle(titleText);
+            const title = this.getNotificationTitle(notification);
             const icon = this.getNotificationIcon();
 
             return (
@@ -214,27 +240,27 @@ const style = StyleSheet.create({
         paddingHorizontal: 10,
         ...Platform.select({
             android: {
-                height: 68
+                height: 68,
             },
             ios: {
-                height: 88
-            }
-        })
+                height: 88,
+            },
+        }),
     },
     iconContainer: {
         ...Platform.select({
             android: {
-                paddingTop: 17
+                paddingTop: 17,
             },
             ios: {
-                paddingTop: 37
-            }
-        })
+                paddingTop: 37,
+            },
+        }),
     },
     icon: {
         borderRadius: (IMAGE_SIZE / 2),
         height: IMAGE_SIZE,
-        width: IMAGE_SIZE
+        width: IMAGE_SIZE,
     },
     textContainer: {
         flex: 1,
@@ -245,25 +271,25 @@ const style = StyleSheet.create({
         ...Platform.select({
             android: {
                 marginTop: 17,
-                height: 50
+                height: 50,
             },
             ios: {
-                paddingTop: 37
-            }
-        })
+                paddingTop: 37,
+            },
+        }),
     },
     title: {
         color: '#FFFFFF',
         fontSize: 14,
-        fontWeight: '600'
+        fontWeight: '600',
     },
     channelName: {
         alignSelf: 'stretch',
         alignItems: 'flex-start',
-        flex: 1
+        flex: 1,
     },
     message: {
         color: '#FFFFFF',
-        fontSize: 14
-    }
+        fontSize: 14,
+    },
 });

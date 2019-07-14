@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -8,11 +8,9 @@ import {
     TouchableWithoutFeedback,
     View,
     Text,
-    findNodeHandle
+    findNodeHandle,
 } from 'react-native';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
-
-import EventEmitter from 'mattermost-redux/utils/event_emitter';
 
 import ErrorText from 'app/components/error_text';
 import FormattedText from 'app/components/formatted_text';
@@ -23,6 +21,7 @@ import TextInputWithLocalizedPlaceholder from 'app/components/text_input_with_lo
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
 import {General} from 'mattermost-redux/constants';
 import {getShortenedURL} from 'app/utils/url';
+import {t} from 'app/utils/i18n';
 
 export default class EditChannelInfo extends PureComponent {
     static propTypes = {
@@ -34,7 +33,7 @@ export default class EditChannelInfo extends PureComponent {
         enableRightButton: PropTypes.func,
         saving: PropTypes.bool.isRequired,
         editing: PropTypes.bool,
-        error: PropTypes.string,
+        error: PropTypes.oneOfType([PropTypes.string, PropTypes.object]),
         displayName: PropTypes.string,
         currentTeamUrl: PropTypes.string,
         channelURL: PropTypes.string,
@@ -47,62 +46,54 @@ export default class EditChannelInfo extends PureComponent {
         oldDisplayName: PropTypes.string,
         oldChannelURL: PropTypes.string,
         oldHeader: PropTypes.string,
-        oldPurpose: PropTypes.string
+        oldPurpose: PropTypes.string,
     };
 
     static defaultProps = {
-        editing: false
+        editing: false,
     };
 
+    constructor(props) {
+        super(props);
+
+        this.nameInput = React.createRef();
+        this.urlInput = React.createRef();
+        this.purposeInput = React.createRef();
+        this.headerInput = React.createRef();
+        this.lastText = React.createRef();
+        this.scroll = React.createRef();
+    }
+
     blur = () => {
-        if (this.nameInput) {
-            this.nameInput.refs.wrappedInstance.blur();
+        if (this.nameInput?.current) {
+            this.nameInput.current.blur();
         }
 
         // TODO: uncomment below once the channel URL field is added
-        // if (this.urlInput) {
-        //     this.urlInput.refs.wrappedInstance.blur();
+        // if (this.urlInput?.current) {
+        //     this.urlInput.current.blur();
         // }
-        if (this.purposeInput) {
-            this.purposeInput.refs.wrappedInstance.blur();
+
+        if (this.purposeInput?.current) {
+            this.purposeInput.current.blur();
         }
-        if (this.headerInput) {
-            this.headerInput.refs.wrappedInstance.blur();
+        if (this.headerInput?.current) {
+            this.headerInput.current.blur();
         }
-        if (this.scroll) {
-            this.scroll.scrollToPosition(0, 0, true);
+
+        if (this.scroll?.current) {
+            this.scroll.current.scrollToPosition(0, 0, true);
         }
-    };
-
-    channelNameRef = (ref) => {
-        this.nameInput = ref;
-    };
-
-    channelURLRef = (ref) => {
-        this.urlInput = ref;
-    };
-
-    channelPurposeRef = (ref) => {
-        this.purposeInput = ref;
-    };
-
-    channelHeaderRef = (ref) => {
-        this.headerInput = ref;
     };
 
     close = (goBack = false) => {
-        EventEmitter.emit('closing-create-channel', false);
         if (goBack) {
             this.props.navigator.pop({animated: true});
         } else {
             this.props.navigator.dismissModal({
-                animationType: 'slide-down'
+                animationType: 'slide-down',
             });
         }
-    };
-
-    lastTextRef = (ref) => {
-        this.lastText = ref;
     };
 
     canUpdate = (displayName, channelURL, purpose, header) => {
@@ -110,7 +101,7 @@ export default class EditChannelInfo extends PureComponent {
             oldDisplayName,
             oldChannelURL,
             oldPurpose,
-            oldHeader
+            oldHeader,
         } = this.props;
 
         return displayName !== oldDisplayName || channelURL !== oldChannelURL ||
@@ -169,13 +160,9 @@ export default class EditChannelInfo extends PureComponent {
         }
     };
 
-    scrollRef = (ref) => {
-        this.scroll = ref;
-    };
-
     scrollToEnd = () => {
-        if (this.scroll && this.lastText) {
-            this.scroll.scrollToFocusedInput(findNodeHandle(this.lastText));
+        if (this.scroll?.current && this.lastText?.current) {
+            this.scroll.current.scrollToFocusedInput(findNodeHandle(this.lastText.current));
         }
     };
 
@@ -190,7 +177,7 @@ export default class EditChannelInfo extends PureComponent {
             displayName,
             channelURL,
             header,
-            purpose
+            purpose,
         } = this.props;
         const {error, saving} = this.props;
         const fullUrl = currentTeamUrl + '/channels';
@@ -213,7 +200,7 @@ export default class EditChannelInfo extends PureComponent {
         let displayError;
         if (error) {
             displayError = (
-                <View style={[style.errorContainer, {deviceWidth}]}>
+                <View style={[style.errorContainer, {width: deviceWidth}]}>
                     <View style={style.errorWrapper}>
                         <ErrorText error={error}/>
                     </View>
@@ -225,7 +212,7 @@ export default class EditChannelInfo extends PureComponent {
             <View style={style.container}>
                 <StatusBar/>
                 <KeyboardAwareScrollView
-                    ref={this.scrollRef}
+                    ref={this.scroll}
                     style={style.container}
                 >
                     {displayError}
@@ -242,13 +229,13 @@ export default class EditChannelInfo extends PureComponent {
                                     </View>
                                     <View style={style.inputContainer}>
                                         <TextInputWithLocalizedPlaceholder
-                                            ref={this.channelNameRef}
+                                            ref={this.nameInput}
                                             value={displayName}
                                             onChangeText={this.onDisplayNameChangeText}
                                             style={style.input}
                                             autoCapitalize='none'
                                             autoCorrect={false}
-                                            placeholder={{id: 'channel_modal.nameEx', defaultMessage: 'E.g.: "Bugs", "Marketing", "客户支持"'}}
+                                            placeholder={{id: t('channel_modal.nameEx'), defaultMessage: 'E.g.: "Bugs", "Marketing", "客户支持"'}}
                                             placeholderTextColor={changeOpacity('#000', 0.5)}
                                             underlineColorAndroid='transparent'
                                             disableFullscreenUI={true}
@@ -271,13 +258,13 @@ export default class EditChannelInfo extends PureComponent {
                                     </View>
                                     <View style={style.inputContainer}>
                                         <TextInputWithLocalizedPlaceholder
-                                            ref={this.channelURLRef}
+                                            ref={this.urlInput}
                                             value={channelURL}
                                             onChangeText={this.onDisplayURLChangeText}
                                             style={style.input}
                                             autoCapitalize='none'
                                             autoCorrect={false}
-                                            placeholder={{id: 'rename_channel.handleHolder', defaultMessage: 'lowercase alphanumeric characters'}}
+                                            placeholder={{id: t('rename_channel.handleHolder'), defaultMessage: 'lowercase alphanumeric characters'}}
                                             placeholderTextColor={changeOpacity('#000', 0.5)}
                                             underlineColorAndroid='transparent'
                                             disableFullscreenUI={true}
@@ -301,13 +288,13 @@ export default class EditChannelInfo extends PureComponent {
                                     </View>
                                     <View style={style.inputContainer}>
                                         <TextInputWithLocalizedPlaceholder
-                                            ref={this.channelPurposeRef}
+                                            ref={this.purposeInput}
                                             value={purpose}
                                             onChangeText={this.onPurposeChangeText}
                                             style={[style.input, {height: 110}]}
                                             autoCapitalize='none'
                                             autoCorrect={false}
-                                            placeholder={{id: 'channel_modal.purposeEx', defaultMessage: 'E.g.: "A channel to file bugs and improvements"'}}
+                                            placeholder={{id: t('channel_modal.purposeEx'), defaultMessage: 'E.g.: "A channel to file bugs and improvements"'}}
                                             placeholderTextColor={changeOpacity('#000', 0.5)}
                                             multiline={true}
                                             blurOnSubmit={false}
@@ -339,13 +326,13 @@ export default class EditChannelInfo extends PureComponent {
                             </View>
                             <View style={style.inputContainer}>
                                 <TextInputWithLocalizedPlaceholder
-                                    ref={this.channelHeaderRef}
+                                    ref={this.headerInput}
                                     value={header}
                                     onChangeText={this.onHeaderChangeText}
                                     style={[style.input, {height: 110}]}
                                     autoCapitalize='none'
                                     autoCorrect={false}
-                                    placeholder={{id: 'channel_modal.headerEx', defaultMessage: 'E.g.: "[Link Title](http://example.com)"'}}
+                                    placeholder={{id: t('channel_modal.headerEx'), defaultMessage: 'E.g.: "[Link Title](http://example.com)"'}}
                                     placeholderTextColor={changeOpacity('#000', 0.5)}
                                     multiline={true}
                                     blurOnSubmit={false}
@@ -355,7 +342,7 @@ export default class EditChannelInfo extends PureComponent {
                                     disableFullscreenUI={true}
                                 />
                             </View>
-                            <View ref={this.lastTextRef}>
+                            <View ref={this.lastText}>
                                 <FormattedText
                                     style={style.helpText}
                                     id='channel_modal.headerHelp'
@@ -374,54 +361,54 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
+            backgroundColor: theme.centerChannelBg,
         },
         scrollView: {
             flex: 1,
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.03),
-            paddingTop: 10
+            paddingTop: 10,
         },
         errorContainer: {
-            backgroundColor: changeOpacity(theme.centerChannelColor, 0.03)
+            backgroundColor: changeOpacity(theme.centerChannelColor, 0.03),
         },
         errorWrapper: {
             justifyContent: 'center',
-            alignItems: 'center'
+            alignItems: 'center',
         },
         inputContainer: {
             marginTop: 10,
-            backgroundColor: '#fff'
+            backgroundColor: '#fff',
         },
         input: {
             color: '#333',
             fontSize: 14,
             height: 40,
-            paddingHorizontal: 15
+            paddingHorizontal: 15,
         },
         titleContainer30: {
             flexDirection: 'row',
-            marginTop: 30
+            marginTop: 30,
         },
         titleContainer15: {
             flexDirection: 'row',
-            marginTop: 15
+            marginTop: 15,
         },
         title: {
             fontSize: 14,
             color: theme.centerChannelColor,
-            marginLeft: 15
+            marginLeft: 15,
         },
         optional: {
             color: changeOpacity(theme.centerChannelColor, 0.5),
             fontSize: 14,
-            marginLeft: 5
+            marginLeft: 5,
         },
         helpText: {
             fontSize: 14,
             color: changeOpacity(theme.centerChannelColor, 0.5),
             marginTop: 10,
-            marginHorizontal: 15
-        }
+            marginHorizontal: 15,
+        },
     };
 });
 

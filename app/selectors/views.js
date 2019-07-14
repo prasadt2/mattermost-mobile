@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {createSelector} from 'reselect';
 
@@ -7,7 +7,7 @@ import {getCurrentChannelId} from 'mattermost-redux/selectors/entities/channels'
 
 const emptyDraft = {
     draft: '',
-    files: []
+    files: [],
 };
 
 function getChannelDrafts(state) {
@@ -26,6 +26,11 @@ export const getCurrentChannelDraft = createSelector(
     }
 );
 
+export function getDraftForChannel(state, channelId) {
+    const drafts = getChannelDrafts(state);
+    return drafts[channelId] || emptyDraft;
+}
+
 export const getThreadDraft = createSelector(
     getThreadDrafts,
     (state, rootId) => rootId,
@@ -33,3 +38,7 @@ export const getThreadDraft = createSelector(
         return drafts[rootId] || emptyDraft;
     }
 );
+
+export function getProfileImageUri(state) {
+    return state.views.user.profileImageUri;
+}

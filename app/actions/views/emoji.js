@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {addReaction as serviceAddReaction} from 'mattermost-redux/actions/posts';
 import {getPostIdsInCurrentChannel, makeGetPostIdsForThread} from 'mattermost-redux/selectors/entities/posts';
@@ -29,6 +29,16 @@ export function addReactionToLatestPost(emoji, rootId) {
 export function addRecentEmoji(emoji) {
     return {
         type: ViewTypes.ADD_RECENT_EMOJI,
-        emoji
+        emoji,
+    };
+}
+
+export function incrementEmojiPickerPage() {
+    return async (dispatch) => {
+        dispatch({
+            type: ViewTypes.INCREMENT_EMOJI_PICKER_PAGE,
+        });
+
+        return {data: true};
     };
 }

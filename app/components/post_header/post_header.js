@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -7,30 +7,29 @@ import {
     Platform,
     Text,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 
 import FormattedText from 'app/components/formatted_text';
 import FormattedTime from 'app/components/formatted_time';
 import FormattedDate from 'app/components/formatted_date';
 import ReplyIcon from 'app/components/reply_icon';
-import FlagIcon from 'app/components/flag_icon';
+import BotTag from 'app/components/bot_tag';
 import {emptyFunction} from 'app/utils/general';
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
-
-const BOT_NAME = 'BOT';
 
 export default class PostHeader extends PureComponent {
     static propTypes = {
         commentCount: PropTypes.number,
         commentedOnDisplayName: PropTypes.string,
         createAt: PropTypes.number.isRequired,
-        displayName: PropTypes.string.isRequired,
+        displayName: PropTypes.string,
         enablePostUsernameOverride: PropTypes.bool,
         fromWebHook: PropTypes.bool,
         isPendingOrFailedPost: PropTypes.bool,
         isSearchResult: PropTypes.bool,
         isSystemMessage: PropTypes.bool,
+        fromAutoResponder: PropTypes.bool,
         militaryTime: PropTypes.bool,
         onPress: PropTypes.func,
         onUsernamePress: PropTypes.func,
@@ -39,18 +38,22 @@ export default class PostHeader extends PureComponent {
         shouldRenderReplyButton: PropTypes.bool,
         showFullDate: PropTypes.bool,
         theme: PropTypes.object.isRequired,
-        username: PropTypes.string.isRequired,
-        isFlagged: PropTypes.bool
+        username: PropTypes.string,
+        isBot: PropTypes.bool,
+        userTimezone: PropTypes.string,
+        enableTimezone: PropTypes.bool,
     };
 
     static defaultProps = {
         commentCount: 0,
         onPress: emptyFunction,
-        onUsernamePress: emptyFunction
+        onUsernamePress: emptyFunction,
     };
 
     handleUsernamePress = () => {
-        this.props.onUsernamePress(this.props.username);
+        if (this.props.username) {
+            this.props.onUsernamePress(this.props.username);
+        }
     }
 
     getDisplayName = (style) => {
@@ -58,7 +61,9 @@ export default class PostHeader extends PureComponent {
             enablePostUsernameOverride,
             fromWebHook,
             isSystemMessage,
-            overrideUsername
+            fromAutoResponder,
+            overrideUsername,
+            isBot,
         } = this.props;
 
         if (fromWebHook) {
@@ -68,13 +73,44 @@ export default class PostHeader extends PureComponent {
             }
 
             return (
-                <View style={style.botContainer}>
+                <View style={style.indicatorContainer}>
                     <Text style={style.displayName}>
                         {name}
                     </Text>
-                    <Text style={style.bot}>
-                        {BOT_NAME}
+                    <BotTag
+                        theme={this.props.theme}
+                    />
+                </View>
+            );
+        } else if (isBot) {
+            return (
+                <TouchableOpacity onPress={this.handleUsernamePress}>
+                    <View style={style.indicatorContainer}>
+                        <Text style={style.displayName}>
+                            {this.props.displayName}
+                        </Text>
+                        <BotTag
+                            theme={this.props.theme}
+                        />
+                    </View>
+                </TouchableOpacity>
+            );
+        } else if (fromAutoResponder) {
+            let name = this.props.displayName;
+            if (overrideUsername && enablePostUsernameOverride) {
+                name = overrideUsername;
+            }
+
+            return (
+                <View style={style.indicatorContainer}>
+                    <Text style={style.displayName}>
+                        {name}
                     </Text>
+                    <FormattedText
+                        id='post_info.auto_responder'
+                        defaultMessage='AUTOMATIC REPLY'
+                        style={style.bot}
+                    />
                 </View>
             );
         } else if (isSystemMessage) {
@@ -136,7 +172,7 @@ export default class PostHeader extends PureComponent {
                 defaultMessage='Commented on {name}{apostrophe} message: '
                 values={{
                     name,
-                    apostrophe
+                    apostrophe,
                 }}
                 style={style.commentedOn}
             />
@@ -150,13 +186,13 @@ export default class PostHeader extends PureComponent {
             createAt,
             isPendingOrFailedPost,
             isSearchResult,
+            userTimezone,
             militaryTime,
             onPress,
             renderReplies,
             shouldRenderReplyButton,
             showFullDate,
             theme,
-            isFlagged
         } = this.props;
         const style = getStyleSheet(theme);
         const showReply = shouldRenderReplyButton || (!commentedOnDisplayName && commentCount > 0 && renderReplies);
@@ -170,6 +206,7 @@ export default class PostHeader extends PureComponent {
                     </Text>
                     <Text style={style.time}>
                         <FormattedTime
+                            timeZone={userTimezone}
                             hour12={!militaryTime}
                             value={createAt}
                         />
@@ -180,6 +217,7 @@ export default class PostHeader extends PureComponent {
             dateComponent = (
                 <Text style={style.time}>
                     <FormattedTime
+                        timeZone={userTimezone}
                         hour12={!militaryTime}
                         value={createAt}
                     />
@@ -188,22 +226,13 @@ export default class PostHeader extends PureComponent {
         }
 
         return (
-            <View>
+            <React.Fragment>
                 <View style={[style.postInfoContainer, (isPendingOrFailedPost && style.pendingPost)]}>
                     <View style={{flexDirection: 'row', flex: 1}}>
                         {this.getDisplayName(style)}
                         <View style={style.timeContainer}>
                             {dateComponent}
                         </View>
-                        {isFlagged &&
-                            <View style={style.flagContainer}>
-                                <FlagIcon
-                                    height={11}
-                                    width={11}
-                                    color={theme.linkColor}
-                                />
-                            </View>
-                        }
                     </View>
                     {showReply &&
                     <TouchableOpacity
@@ -226,7 +255,7 @@ export default class PostHeader extends PureComponent {
                     {this.renderCommentedOnMessage(style)}
                 </View>
                 }
-            </View>
+            </React.Fragment>
         );
     }
 }
@@ -236,72 +265,64 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
         commentedOn: {
             color: changeOpacity(theme.centerChannelColor, 0.65),
             marginBottom: 3,
-            lineHeight: 21
+            lineHeight: 21,
         },
         postInfoContainer: {
             alignItems: 'center',
             flexDirection: 'row',
-            marginTop: 10
+            marginTop: 10,
         },
         pendingPost: {
-            opacity: 0.5
+            opacity: 0.5,
         },
         timeContainer: {
-            justifyContent: 'center'
+            justifyContent: 'center',
         },
         datetime: {
             flex: 1,
-            flexDirection: 'row'
+            flexDirection: 'row',
         },
         time: {
             color: theme.centerChannelColor,
             fontSize: 13,
             marginLeft: 5,
             marginBottom: 1,
-            opacity: 0.5
+            opacity: 0.5,
         },
         replyIconContainer: {
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            marginVertical: -10,
+            minWidth: 40,
+            paddingVertical: 10,
         },
         replyText: {
             fontSize: 15,
             marginLeft: 3,
-            color: theme.linkColor
+            color: theme.linkColor,
         },
-        botContainer: {
-            flexDirection: 'row'
-        },
-        bot: {
-            alignSelf: 'center',
-            backgroundColor: changeOpacity(theme.centerChannelColor, 0.15),
-            borderRadius: 2,
-            color: theme.centerChannelColor,
-            fontSize: 10,
-            fontWeight: '600',
-            marginRight: 5,
-            paddingVertical: 2,
-            paddingHorizontal: 4
+        indicatorContainer: {
+            flexDirection: 'row',
         },
         displayName: {
             color: theme.centerChannelColor,
             fontSize: 15,
             fontWeight: '600',
             marginRight: 5,
-            marginBottom: 3
+            marginBottom: 3,
         },
         flagContainer: {
             marginLeft: 10,
             alignSelf: 'center',
             ...Platform.select({
                 ios: {
-                    marginBottom: 2
+                    marginBottom: 2,
                 },
                 android: {
-                    marginBottom: 1
-                }
-            })
-        }
+                    marginBottom: 1,
+                },
+            }),
+        },
     };
 });

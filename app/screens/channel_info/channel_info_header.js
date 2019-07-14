@@ -1,14 +1,15 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React from 'react';
 import PropTypes from 'prop-types';
 import {
     Text,
-    View
+    View,
+    Platform,
 } from 'react-native';
 
-import ChanneIcon from 'app/components/channel_icon';
+import ChannelIcon from 'app/components/channel_icon';
 import FormattedDate from 'app/components/formatted_date';
 import FormattedText from 'app/components/formatted_text';
 import Markdown from 'app/components/markdown';
@@ -23,10 +24,14 @@ export default class ChannelInfoHeader extends React.PureComponent {
         displayName: PropTypes.string.isRequired,
         header: PropTypes.string,
         navigator: PropTypes.object.isRequired,
+        onPermalinkPress: PropTypes.func,
         purpose: PropTypes.string,
         status: PropTypes.string,
         theme: PropTypes.object.isRequired,
-        type: PropTypes.string.isRequired
+        type: PropTypes.string.isRequired,
+        isArchived: PropTypes.bool.isRequired,
+        isBot: PropTypes.bool.isRequired,
+        isGroupConstrained: PropTypes.bool,
     };
 
     render() {
@@ -37,26 +42,35 @@ export default class ChannelInfoHeader extends React.PureComponent {
             header,
             memberCount,
             navigator,
+            onPermalinkPress,
             purpose,
             status,
             theme,
-            type
+            type,
+            isArchived,
+            isBot,
+            isGroupConstrained,
         } = this.props;
 
         const style = getStyleSheet(theme);
         const textStyles = getMarkdownTextStyles(theme);
         const blockStyles = getMarkdownBlockStyles(theme);
+        const baseTextStyle = Platform.OS === 'ios' ?
+            {...style.detail, lineHeight: 20} :
+            style.detail;
 
         return (
             <View style={style.container}>
                 <View style={style.channelNameContainer}>
-                    <ChanneIcon
+                    <ChannelIcon
                         isInfo={true}
                         membersCount={memberCount - 1}
                         size={16}
                         status={status}
                         theme={theme}
                         type={type}
+                        isArchived={isArchived}
+                        isBot={isBot}
                     />
                     <Text
                         ellipsizeMode='tail'
@@ -75,7 +89,8 @@ export default class ChannelInfoHeader extends React.PureComponent {
                         />
                         <Markdown
                             navigator={navigator}
-                            baseTextStyle={style.detail}
+                            onPermalinkPress={onPermalinkPress}
+                            baseTextStyle={baseTextStyle}
                             textStyles={textStyles}
                             blockStyles={blockStyles}
                             value={purpose}
@@ -91,12 +106,21 @@ export default class ChannelInfoHeader extends React.PureComponent {
                         />
                         <Markdown
                             navigator={navigator}
-                            baseTextStyle={style.detail}
+                            onPermalinkPress={onPermalinkPress}
+                            baseTextStyle={baseTextStyle}
                             textStyles={textStyles}
                             blockStyles={blockStyles}
                             value={header}
                         />
                     </View>
+                }
+                {isGroupConstrained &&
+                    <Text style={style.createdBy}>
+                        <FormattedText
+                            id='mobile.routes.channelInfo.groupManaged'
+                            defaultMessage='Members are managed by linked groups'
+                        />
+                    </Text>
                 }
                 {creator &&
                     <Text style={style.createdBy}>
@@ -104,7 +128,7 @@ export default class ChannelInfoHeader extends React.PureComponent {
                             id='mobile.routes.channelInfo.createdBy'
                             defaultMessage='Created by {creator} on '
                             values={{
-                                creator
+                                creator,
                             }}
                         />
                         <FormattedDate
@@ -127,38 +151,38 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
             marginBottom: 40,
             padding: 15,
             borderBottomWidth: 1,
-            borderBottomColor: changeOpacity(theme.centerChannelColor, 0.1)
+            borderBottomColor: changeOpacity(theme.centerChannelColor, 0.1),
         },
         channelName: {
             flex: 1,
             fontSize: 15,
             fontWeight: '600',
-            color: theme.centerChannelColor
+            color: theme.centerChannelColor,
         },
         channelNameContainer: {
             flexDirection: 'row',
             alignItems: 'center',
-            paddingVertical: 10
+            paddingVertical: 10,
         },
         createdBy: {
             flexDirection: 'row',
             fontSize: 12,
             marginTop: 5,
             color: changeOpacity(theme.centerChannelColor, 0.5),
-            backgroundColor: 'transparent'
+            backgroundColor: 'transparent',
         },
         detail: {
             fontSize: 13,
-            color: theme.centerChannelColor
+            color: theme.centerChannelColor,
         },
         header: {
             fontSize: 13,
             marginBottom: 10,
             color: theme.centerChannelColor,
-            backgroundColor: 'transparent'
+            backgroundColor: 'transparent',
         },
         section: {
-            marginTop: 15
-        }
+            marginTop: 15,
+        },
     };
 });

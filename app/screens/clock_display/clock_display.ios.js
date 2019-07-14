@@ -1,6 +1,8 @@
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 import React from 'react';
 import {
-    View
+    View,
 } from 'react-native';
 
 import StatusBar from 'app/components/status_bar';
@@ -9,6 +11,7 @@ import SectionItem from 'app/screens/settings/section_item';
 import FormattedText from 'app/components/formatted_text';
 
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
+import {t} from 'app/utils/i18n';
 
 import ClockDisplayBase from './clock_display_base';
 
@@ -24,7 +27,7 @@ export default class ClockDisplay extends ClockDisplayBase {
                 <View style={style.wrapper}>
                     <Section
                         disableHeader={true}
-                        footerId='user.settings.display.preferTime'
+                        footerId={t('user.settings.display.preferTime')}
                         footerDefaultMessage='Select how you prefer time displayed.'
                         theme={theme}
                     >
@@ -66,12 +69,12 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
+            backgroundColor: theme.centerChannelBg,
         },
         wrapper: {
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.06),
             flex: 1,
-            paddingTop: 35
-        }
+            paddingTop: 35,
+        },
     };
 });

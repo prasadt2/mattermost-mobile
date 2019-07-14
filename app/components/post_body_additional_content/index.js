@@ -1,11 +1,10 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
-
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {connect} from 'react-redux';
+import {bindActionCreators} from 'redux';
 
+import {getRedirectLocation} from 'mattermost-redux/actions/general';
 import {Preferences} from 'mattermost-redux/constants';
 import {getConfig} from 'mattermost-redux/selectors/entities/general';
 import {getOpenGraphMetadataForUrl} from 'mattermost-redux/selectors/entities/posts';
@@ -31,6 +30,16 @@ function makeGetFirstLink() {
     };
 }
 
+function getOpenGraphData(metadata, url) {
+    if (!metadata || !metadata.embeds) {
+        return null;
+    }
+
+    return metadata.embeds.find((embed) => {
+        return embed.type === 'opengraph' && embed.url === url ? embed.data : null;
+    });
+}
+
 function makeMapStateToProps() {
     const getFirstLink = makeGetFirstLink();
 
@@ -40,18 +49,34 @@ function makeMapStateToProps() {
 
         // Link previews used to be an advanced settings until server version 4.4 when it was changed to be a display setting.
         // We are checking both here until we bump the server requirement for the mobile apps.
-        const previewsEnabled = getBool(state, Preferences.CATEGORY_ADVANCED_SETTINGS, `${ViewTypes.FEATURE_TOGGLE_PREFIX}${ViewTypes.EMBED_PREVIEW}`) ||
-            getBool(state, Preferences.CATEGORY_DISPLAY_SETTINGS, Preferences.LINK_PREVIEW_DISPLAY, true);
+        const previewsEnabled = (getBool(state, Preferences.CATEGORY_ADVANCED_SETTINGS, `${ViewTypes.FEATURE_TOGGLE_PREFIX}${ViewTypes.EMBED_PREVIEW}`) ||
+            getBool(state, Preferences.CATEGORY_DISPLAY_SETTINGS, Preferences.LINK_PREVIEW_DISPLAY, true));
+
+        const removeLinkPreview = ownProps.postProps.remove_link_preview === 'true';
+
+        let openGraphData = getOpenGraphMetadataForUrl(state, link);
+        if (!openGraphData) {
+            const data = getOpenGraphData(ownProps.metadata, link);
+            openGraphData = data?.data;
+        }
 
         return {
             ...getDimensions(state),
-            config,
+            googleDeveloperKey: config.GoogleDeveloperKey,
             link,
-            openGraphData: getOpenGraphMetadataForUrl(state, link),
-            showLinkPreviews: previewsEnabled && config.EnableLinkPreviews === 'true',
-            theme: getTheme(state)
+            openGraphData,
+            showLinkPreviews: previewsEnabled && config.EnableLinkPreviews === 'true' && !removeLinkPreview,
+            theme: getTheme(state),
         };
     };
 }
 
-export default connect(makeMapStateToProps)(PostBodyAdditionalContent);
+function mapDispatchToProps(dispatch) {
+    return {
+        actions: bindActionCreators({
+            getRedirectLocation,
+        }, dispatch),
+    };
+}
+
+export default connect(makeMapStateToProps, mapDispatchToProps)(PostBodyAdditionalContent);

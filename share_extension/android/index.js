@@ -1,43 +1,50 @@
-// Copyright (c) 2018-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import {Provider} from 'react-redux';
 import {IntlProvider} from 'react-intl';
 
-import {Client4} from 'mattermost-redux/client';
-
 import {getTranslations} from 'app/i18n';
-import initialState from 'app/initial_state';
 import {getCurrentLocale} from 'app/selectors/i18n';
-import configureStore from 'app/store';
+import {store} from 'app/mattermost';
 
 import {extensionSelectTeamId} from './actions';
-import Navigation from './navigation';
+import Extension from './extension';
 
 export default class ShareApp extends PureComponent {
     constructor() {
         super();
 
-        this.store = configureStore(initialState);
-        this.unsubscribeFromStore = this.store.subscribe(this.listenForHydration);
-        this.state = {init: false};
+        const st = store.getState();
+        if (st?.views?.root?.hydrationComplete) {
+            this.state = {init: true};
+            this.listenForHydration();
+        } else {
+            this.unsubscribeFromStore = store.subscribe(this.listenForHydration);
+            this.state = {init: false};
+        }
+    }
+
+    componentDidMount() {
+        this.mounted = true;
     }
 
     listenForHydration = () => {
-        const {dispatch, getState} = this.store;
+        const {dispatch, getState} = store;
         const state = getState();
         if (state.views.root.hydrationComplete) {
-            const {credentials} = state.entities.general;
             const {currentTeamId} = state.entities.teams;
 
-            this.unsubscribeFromStore();
-            if (credentials.token && credentials.url) {
-                Client4.setToken(credentials.token);
-                Client4.setUrl(credentials.url);
+            if (this.unsubscribeFromStore) {
+                this.unsubscribeFromStore();
             }
-            extensionSelectTeamId(currentTeamId)(dispatch, getState);
-            this.setState({init: true});
+
+            dispatch(extensionSelectTeamId(currentTeamId));
+
+            if (this.mounted) {
+                this.setState({init: true});
+            }
         }
     };
 
@@ -46,15 +53,15 @@ export default class ShareApp extends PureComponent {
             return null;
         }
 
-        const locale = getCurrentLocale(this.store.getState());
+        const locale = getCurrentLocale(store.getState());
 
         return (
-            <Provider store={this.store}>
+            <Provider store={store}>
                 <IntlProvider
                     locale={locale}
                     messages={getTranslations(locale)}
                 >
-                    <Navigation/>
+                    <Extension/>
                 </IntlProvider>
             </Provider>
         );

@@ -1,166 +1,176 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {
-    InteractionManager,
-    Platform,
-    StyleSheet,
-    FlatList
-} from 'react-native';
+import {FlatList, StyleSheet} from 'react-native';
 
-import ChannelIntro from 'app/components/channel_intro';
+import EventEmitter from 'mattermost-redux/utils/event_emitter';
+import * as PostListUtils from 'mattermost-redux/utils/post_list';
+
+import CombinedUserActivityPost from 'app/components/combined_user_activity_post';
 import Post from 'app/components/post';
-import {DATE_LINE, START_OF_NEW_MESSAGES} from 'app/selectors/post_list';
+import {DeepLinkTypes, ListTypes} from 'app/constants';
 import mattermostManaged from 'app/mattermost_managed';
 import {makeExtraData} from 'app/utils/list_view';
+import {changeOpacity} from 'app/utils/theme';
+import {matchDeepLink} from 'app/utils/url';
+import telemetry from 'app/telemetry';
 
 import DateHeader from './date_header';
-import LoadMorePosts from './load_more_posts';
 import NewMessagesDivider from './new_messages_divider';
-import withLayout from './with_layout';
 
-const DateHeaderWithLayout = withLayout(DateHeader);
-const NewMessagesDividerWithLayout = withLayout(NewMessagesDivider);
-const PostWithLayout = withLayout(Post);
+const INITIAL_BATCH_TO_RENDER = 15;
+const SCROLL_UP_MULTIPLIER = 3.5;
+const SCROLL_POSITION_CONFIG = {
 
-const INITAL_BATCH_TO_RENDER = 15;
+    // To avoid scrolling the list when new messages arrives
+    // if the user is not at the bottom
+    minIndexForVisible: 0,
+
+    // If the user is at the bottom or 60px from the bottom
+    // auto scroll show the new message
+    autoscrollToTopThreshold: 60,
+};
 
 export default class PostList extends PureComponent {
     static propTypes = {
         actions: PropTypes.shape({
-            refreshChannelWithRetry: PropTypes.func.isRequired
+            handleSelectChannelByName: PropTypes.func.isRequired,
+            loadChannelsByTeamName: PropTypes.func.isRequired,
+            refreshChannelWithRetry: PropTypes.func.isRequired,
+            selectFocusedPostId: PropTypes.func.isRequired,
+            setDeepLinkURL: PropTypes.func.isRequired,
         }).isRequired,
         channelId: PropTypes.string,
-        currentUserId: PropTypes.string,
-        deviceHeight: PropTypes.number.isRequired,
+        deepLinkURL: PropTypes.string,
+        extraData: PropTypes.any,
+        highlightPinnedOrFlagged: PropTypes.bool,
         highlightPostId: PropTypes.string,
-        indicateNewMessages: PropTypes.bool,
+        initialIndex: PropTypes.number,
         isSearchResult: PropTypes.bool,
+        lastPostIndex: PropTypes.number.isRequired,
         lastViewedAt: PropTypes.number, // Used by container // eslint-disable-line no-unused-prop-types
-        loadMore: PropTypes.func,
-        measureCellLayout: PropTypes.bool,
         navigator: PropTypes.object,
+        onLoadMoreUp: PropTypes.func,
+        onHashtagPress: PropTypes.func,
+        onPermalinkPress: PropTypes.func,
         onPostPress: PropTypes.func,
         onRefresh: PropTypes.func,
         postIds: PropTypes.array.isRequired,
+        refreshing: PropTypes.bool,
+        renderFooter: PropTypes.oneOfType([PropTypes.func, PropTypes.object]),
         renderReplies: PropTypes.bool,
-        showLoadMore: PropTypes.bool,
+        serverURL: PropTypes.string.isRequired,
         shouldRenderReplyButton: PropTypes.bool,
-        theme: PropTypes.object.isRequired
+        siteURL: PropTypes.string.isRequired,
+        theme: PropTypes.object.isRequired,
+        location: PropTypes.string,
+        scrollViewNativeID: PropTypes.string,
     };
 
     static defaultProps = {
-        loadMore: () => true
+        onLoadMoreUp: () => true,
+        renderFooter: () => null,
+        refreshing: false,
+        serverURL: '',
+        siteURL: '',
+        postIds: [],
     };
 
-    newMessagesIndex = -1;
-    scrollToMessageTries = 0;
-    makeExtraData = makeExtraData();
-    itemMeasurements = {};
+    constructor(props) {
+        super(props);
 
-    state = {
-        managedConfig: {},
-        scrollToMessage: false
-    };
+        this.hasDoneInitialScroll = false;
+        this.contentOffsetY = 0;
+        this.shouldScrollToBottom = false;
+        this.makeExtraData = makeExtraData();
+        this.flatListRef = React.createRef();
 
-    componentWillMount() {
-        this.listenerId = mattermostManaged.addEventListener('change', this.setManagedConfig);
+        this.state = {
+            postListHeight: 0,
+        };
     }
 
     componentDidMount() {
-        this.setManagedConfig();
+        EventEmitter.on('scroll-to-bottom', this.handleSetScrollToBottom);
     }
 
     componentWillReceiveProps(nextProps) {
-        if (nextProps.postIds !== this.props.postIds) {
-            this.newMessagesIndex = -1;
-        }
         if (this.props.channelId !== nextProps.channelId) {
-            this.itemMeasurements = {};
-            this.newMessageScrolledTo = false;
+            this.contentOffsetY = 0;
+            this.hasDoneInitialScroll = false;
         }
     }
 
     componentDidUpdate(prevProps) {
-        const initialPosts = !prevProps.postIds.length && prevProps.postIds !== this.props.postIds;
-        if ((prevProps.channelId !== this.props.channelId || initialPosts) && this.refs.list) {
-            this.scrollToBottomOffset();
-        } else if ((this.props.measureCellLayout || this.props.isSearchResult) && this.state.scrollToMessage) {
-            this.scrollListToMessageOffset();
+        const {actions, channelId, deepLinkURL, postIds} = this.props;
+
+        if (deepLinkURL && deepLinkURL !== prevProps.deepLinkURL) {
+            this.handleDeepLink(deepLinkURL);
+            actions.setDeepLinkURL('');
+        }
+
+        if (this.shouldScrollToBottom && prevProps.channelId === channelId && prevProps.postIds.length === postIds.length) {
+            this.scrollToBottom();
+            this.shouldScrollToBottom = false;
         }
     }
 
     componentWillUnmount() {
-        mattermostManaged.removeEventListener(this.listenerId);
+        EventEmitter.off('scroll-to-bottom', this.handleSetScrollToBottom);
     }
 
-    scrollToBottomOffset = () => {
-        InteractionManager.runAfterInteractions(() => {
-            if (this.refs.list) {
-                this.refs.list.scrollToOffset({offset: 0, animated: false});
-            }
-        });
-    }
-
-    getMeasurementOffset = (index) => {
-        const orderedKeys = Object.keys(this.itemMeasurements).sort().slice(0, index);
-        return orderedKeys.map((i) => this.itemMeasurements[i]).reduce((a, b) => a + b, 0);
-    }
-
-    scrollListToMessageOffset = () => {
-        const index = this.moreNewMessages ? this.props.postIds.length : this.newMessagesIndex;
-        if (index !== -1) {
-            let offset = this.getMeasurementOffset(index);
-
-            const windowHeight = this.state.postListHeight;
-            if (index !== this.props.postIds.length - 1) {
-                if (offset < windowHeight) {
-                    return; // no need to scroll since item is in view
-                } else if (offset > windowHeight) {
-                    offset = (offset - (windowHeight / 2)) + this.itemMeasurements[index];
-                }
-            }
-
-            InteractionManager.runAfterInteractions(() => {
-                if (this.refs.list) {
-                    if (!this.moreNewMessages) {
-                        this.newMessageScrolledTo = true;
-                    }
-
-                    this.refs.list.scrollToOffset({offset, animated: true});
-                    this.newMessagesIndex = -1;
-                    this.moreNewMessages = false;
-                    this.setState({
-                        scrollToMessage: false
-                    });
-                }
-            });
-        }
-    }
-
-    setManagedConfig = async (config) => {
-        let nextConfig = config;
-        if (!nextConfig) {
-            nextConfig = await mattermostManaged.getLocalConfig();
-        }
-
-        this.setState({
-            managedConfig: nextConfig
-        });
+    handleClosePermalink = () => {
+        const {actions} = this.props;
+        actions.selectFocusedPostId('');
+        this.showingPermalink = false;
     };
 
-    keyExtractor = (item) => {
-        // All keys are strings (either post IDs or special keys)
-        return item;
+    handleContentSizeChange = (contentWidth, contentHeight) => {
+        this.scrollToInitialIndexIfNeeded(contentWidth, contentHeight);
+
+        if (this.state.postListHeight && contentHeight < this.state.postListHeight && this.props.extraData) {
+            // We still have less than 1 screen of posts loaded with more to get, so load more
+            this.props.onLoadMoreUp();
+        }
     };
 
-    onRefresh = () => {
+    handleDeepLink = (url) => {
+        const {serverURL, siteURL} = this.props;
+
+        const match = matchDeepLink(url, serverURL, siteURL);
+        if (match) {
+            if (match.type === DeepLinkTypes.CHANNEL) {
+                this.props.actions.handleSelectChannelByName(match.channelName, match.teamName);
+            } else if (match.type === DeepLinkTypes.PERMALINK) {
+                this.handlePermalinkPress(match.postId, match.teamName);
+            }
+        }
+    };
+
+    handleLayout = (event) => {
+        const {height} = event.nativeEvent.layout;
+        this.setState({postListHeight: height});
+    };
+
+    handlePermalinkPress = (postId, teamName) => {
+        telemetry.start(['post_list:permalink']);
+        const {actions, onPermalinkPress} = this.props;
+
+        if (onPermalinkPress) {
+            onPermalinkPress(postId, true);
+        } else {
+            actions.loadChannelsByTeamName(teamName);
+            this.showPermalinkView(postId);
+        }
+    };
+
+    handleRefresh = () => {
         const {
             actions,
             channelId,
-            onRefresh
+            onRefresh,
         } = this.props;
 
         if (channelId) {
@@ -172,157 +182,198 @@ export default class PostList extends PureComponent {
         }
     };
 
-    measureItem = (index, height) => {
-        this.itemMeasurements[index] = height;
-        if (this.props.postIds.length === Object.values(this.itemMeasurements).length) {
-            if (this.newMessagesIndex !== -1 && !this.newMessageScrolledTo) {
-                this.setState({
-                    scrollToMessage: true
-                });
+    handleScroll = (event) => {
+        const pageOffsetY = event.nativeEvent.contentOffset.y;
+        if (pageOffsetY > 0) {
+            const contentHeight = event.nativeEvent.contentSize.height;
+            const direction = (this.contentOffsetY < pageOffsetY) ?
+                ListTypes.VISIBILITY_SCROLL_UP :
+                ListTypes.VISIBILITY_SCROLL_DOWN;
+
+            this.contentOffsetY = pageOffsetY;
+            if (
+                direction === ListTypes.VISIBILITY_SCROLL_UP &&
+                (contentHeight - pageOffsetY) < (this.state.postListHeight * SCROLL_UP_MULTIPLIER)
+            ) {
+                this.props.onLoadMoreUp();
             }
         }
+    };
+
+    handleScrollToIndexFailed = () => {
+        requestAnimationFrame(() => {
+            this.hasDoneInitialScroll = false;
+            this.scrollToInitialIndexIfNeeded(1, 1);
+        });
+    };
+
+    handleSetScrollToBottom = () => {
+        this.shouldScrollToBottom = true;
     }
 
-    renderItem = ({item, index}) => {
-        if (item === START_OF_NEW_MESSAGES) {
-            this.newMessagesIndex = index;
+    keyExtractor = (item) => {
+        // All keys are strings (either post IDs or special keys)
+        return item;
+    };
 
+    renderItem = ({item, index}) => {
+        if (PostListUtils.isStartOfNewMessages(item)) {
             // postIds includes a date item after the new message indicator so 2
             // needs to be added to the index for the length check to be correct.
-            this.moreNewMessages = this.props.postIds.length === index + 2;
+            const moreNewMessages = this.props.postIds.length === index + 2;
 
             return (
-                <NewMessagesDividerWithLayout
+                <NewMessagesDivider
                     index={index}
-                    onLayoutCalled={this.measureItem}
                     theme={this.props.theme}
-                    moreMessages={this.moreNewMessages}
-                    shouldCallOnLayout={this.props.measureCellLayout && !this.newMessageScrolledTo}
+                    moreMessages={moreNewMessages}
                 />
             );
-        } else if (item.indexOf(DATE_LINE) === 0) {
-            const date = item.substring(DATE_LINE.length);
-            return this.renderDateHeader(new Date(date), index);
+        } else if (PostListUtils.isDateLine(item)) {
+            return (
+                <DateHeader
+                    date={PostListUtils.getDateForDateLine(item)}
+                    index={index}
+                />
+            );
         }
-
-        const postId = item;
 
         // Remember that the list is rendered with item 0 at the bottom so the "previous" post
         // comes after this one in the list
         const previousPostId = index < this.props.postIds.length - 1 ? this.props.postIds[index + 1] : null;
         const nextPostId = index > 0 ? this.props.postIds[index - 1] : null;
 
-        return this.renderPost(postId, previousPostId, nextPostId, index);
-    };
+        const postProps = {
+            previousPostId,
+            nextPostId,
+            highlightPinnedOrFlagged: this.props.highlightPinnedOrFlagged,
+            isSearchResult: this.props.isSearchResult,
+            location: this.props.location,
+            managedConfig: mattermostManaged.getCachedConfig(),
+            navigator: this.props.navigator,
+            onHashtagPress: this.props.onHashtagPress,
+            onPermalinkPress: this.handlePermalinkPress,
+            onPress: this.props.onPostPress,
+            renderReplies: this.props.renderReplies,
+            shouldRenderReplyButton: this.props.shouldRenderReplyButton,
+        };
 
-    renderDateHeader = (date, index) => {
-        return (
-            <DateHeaderWithLayout
-                date={date}
-                index={index}
-                onLayoutCalled={this.measureItem}
-                shouldCallOnLayout={this.props.measureCellLayout && !this.newMessageScrolledTo}
-            />
-        );
-    };
-
-    renderPost = (postId, previousPostId, nextPostId, index) => {
-        const {
-            highlightPostId,
-            isSearchResult,
-            navigator,
-            onPostPress,
-            renderReplies,
-            shouldRenderReplyButton
-        } = this.props;
-        const {managedConfig} = this.state;
-
-        const highlight = highlightPostId === postId;
-        if (highlight) {
-            this.newMessagesIndex = index;
-        }
-
-        return (
-            <PostWithLayout
-                postId={postId}
-                previousPostId={previousPostId}
-                nextPostId={nextPostId}
-                highlight={highlight}
-                index={index}
-                renderReplies={renderReplies}
-                isSearchResult={isSearchResult}
-                shouldRenderReplyButton={shouldRenderReplyButton}
-                onPress={onPostPress}
-                navigator={navigator}
-                managedConfig={managedConfig}
-                onLayoutCalled={this.measureItem}
-                shouldCallOnLayout={this.props.measureCellLayout && !this.newMessageScrolledTo}
-            />
-        );
-    };
-
-    renderFooter = () => {
-        if (!this.props.channelId) {
-            return null;
-        }
-
-        if (this.props.showLoadMore) {
+        if (PostListUtils.isCombinedUserActivityPost(item)) {
             return (
-                <LoadMorePosts
-                    channelId={this.props.channelId}
-                    theme={this.props.theme}
+                <CombinedUserActivityPost
+                    combinedId={item}
+                    {...postProps}
                 />
             );
         }
 
+        const postId = item;
+
         return (
-            <ChannelIntro
-                channelId={this.props.channelId}
-                navigator={this.props.navigator}
+            <Post
+                postId={postId}
+                highlight={this.props.highlightPostId === postId}
+                isLastPost={this.props.lastPostIndex === index}
+                {...postProps}
             />
         );
     };
 
-    onLayout = (event) => {
-        const {height} = event.nativeEvent.layout;
-        this.setState({
-            postListHeight: height
-        });
-    }
+    scrollToBottom = () => {
+        setTimeout(() => {
+            if (this.flatListRef && this.flatListRef.current) {
+                this.flatListRef.current.scrollToOffset({offset: 0, animated: true});
+            }
+        }, 250);
+    };
+
+    scrollToInitialIndexIfNeeded = (width, height) => {
+        if (
+            width > 0 &&
+            height > 0 &&
+            this.props.initialIndex > 0 &&
+            !this.hasDoneInitialScroll
+        ) {
+            requestAnimationFrame(() => {
+                this.flatListRef.current.scrollToIndex({
+                    animated: false,
+                    index: this.props.initialIndex,
+                    viewOffset: 0,
+                    viewPosition: 1, // 0 is at bottom
+                });
+            });
+            this.hasDoneInitialScroll = true;
+        }
+    };
+
+    showPermalinkView = (postId) => {
+        const {actions, navigator} = this.props;
+
+        actions.selectFocusedPostId(postId);
+
+        if (!this.showingPermalink) {
+            const options = {
+                screen: 'Permalink',
+                animationType: 'none',
+                backButtonTitle: '',
+                overrideBackPress: true,
+                navigatorStyle: {
+                    navBarHidden: true,
+                    screenBackgroundColor: changeOpacity('#000', 0.2),
+                    modalPresentationStyle: 'overCurrentContext',
+                },
+                passProps: {
+                    isPermalink: true,
+                    onClose: this.handleClosePermalink,
+                },
+            };
+
+            this.showingPermalink = true;
+            navigator.showModal(options);
+        }
+    };
 
     render() {
         const {
             channelId,
             highlightPostId,
-            loadMore,
             postIds,
-            showLoadMore
+            refreshing,
+            scrollViewNativeID,
         } = this.props;
 
-        const refreshControl = {
-            refreshing: false
-        };
+        const refreshControl = {refreshing};
 
         if (channelId) {
-            refreshControl.onRefresh = this.onRefresh;
+            refreshControl.onRefresh = this.handleRefresh;
         }
+
+        const hasPostsKey = postIds.length ? 'true' : 'false';
 
         return (
             <FlatList
-                onLayout={this.onLayout}
-                ref='list'
-                data={postIds}
-                extraData={this.makeExtraData(channelId, highlightPostId, showLoadMore)}
-                initialNumToRender={INITAL_BATCH_TO_RENDER}
-                maxToRenderPerBatch={INITAL_BATCH_TO_RENDER + 1}
-                inverted={true}
-                keyExtractor={this.keyExtractor}
-                ListFooterComponent={this.renderFooter}
-                onEndReached={loadMore}
-                onEndReachedThreshold={Platform.OS === 'ios' ? 0 : 1}
-                {...refreshControl}
-                renderItem={this.renderItem}
+                key={`recyclerFor-${channelId}-${hasPostsKey}`}
+                ref={this.flatListRef}
                 contentContainerStyle={styles.postListContent}
+                data={postIds}
+                extraData={this.makeExtraData(channelId, highlightPostId, this.props.extraData)}
+                initialNumToRender={INITIAL_BATCH_TO_RENDER}
+                inverted={true}
+                keyboardDismissMode={'interactive'}
+                keyboardShouldPersistTaps={'handled'}
+                keyExtractor={this.keyExtractor}
+                ListFooterComponent={this.props.renderFooter}
+                maintainVisibleContentPosition={SCROLL_POSITION_CONFIG}
+                maxToRenderPerBatch={INITIAL_BATCH_TO_RENDER + 1}
+                onContentSizeChange={this.handleContentSizeChange}
+                onLayout={this.handleLayout}
+                onScroll={this.handleScroll}
+                onScrollToIndexFailed={this.handleScrollToIndexFailed}
+                removeClippedSubviews={true}
+                renderItem={this.renderItem}
+                scrollEventThrottle={60}
+                {...refreshControl}
+                nativeID={scrollViewNativeID}
             />
         );
     }
@@ -330,6 +381,6 @@ export default class PostList extends PureComponent {
 
 const styles = StyleSheet.create({
     postListContent: {
-        paddingTop: 5
-    }
+        paddingTop: 5,
+    },
 });

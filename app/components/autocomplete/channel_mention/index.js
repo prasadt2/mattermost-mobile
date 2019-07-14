@@ -1,10 +1,11 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
 
-import {searchChannels} from 'mattermost-redux/actions/channels';
+import {searchChannels, autocompleteChannelsForSearch} from 'mattermost-redux/actions/channels';
+import {getMyChannelMemberships} from 'mattermost-redux/selectors/entities/channels';
 import {getCurrentTeamId} from 'mattermost-redux/selectors/entities/teams';
 
 import {
@@ -12,7 +13,8 @@ import {
     filterOtherChannels,
     filterPublicChannels,
     filterPrivateChannels,
-    getMatchTermForChannelMention
+    filterDirectAndGroupMessages,
+    getMatchTermForChannelMention,
 } from 'app/selectors/autocomplete';
 import {getTheme} from 'mattermost-redux/selectors/entities/preferences';
 
@@ -28,9 +30,11 @@ function mapStateToProps(state, ownProps) {
     let otherChannels;
     let publicChannels;
     let privateChannels;
+    let directAndGroupMessages;
     if (isSearch) {
         publicChannels = filterPublicChannels(state, matchTerm);
         privateChannels = filterPrivateChannels(state, matchTerm);
+        directAndGroupMessages = filterDirectAndGroupMessages(state, matchTerm);
     } else {
         myChannels = filterMyChannels(state, matchTerm);
         otherChannels = filterOtherChannels(state, matchTerm);
@@ -38,21 +42,25 @@ function mapStateToProps(state, ownProps) {
 
     return {
         myChannels,
+        myMembers: getMyChannelMemberships(state),
         otherChannels,
         publicChannels,
         privateChannels,
+        directAndGroupMessages,
         currentTeamId: getCurrentTeamId(state),
         matchTerm,
         requestStatus: state.requests.channels.getChannels.status,
-        theme: getTheme(state)
+        theme: getTheme(state),
+        serverVersion: state.entities.general.serverVersion,
     };
 }
 
 function mapDispatchToProps(dispatch) {
     return {
         actions: bindActionCreators({
-            searchChannels
-        }, dispatch)
+            searchChannels,
+            autocompleteChannelsForSearch,
+        }, dispatch),
     };
 }
 

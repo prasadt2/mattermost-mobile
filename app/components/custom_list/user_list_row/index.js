@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {connect} from 'react-redux';
 
@@ -13,7 +13,7 @@ function mapStateToProps(state, ownProps) {
         isMyUser: getCurrentUserId(state) === ownProps.id,
         theme: getTheme(state),
         user: getUser(state, ownProps.id),
-        teammateNameDisplay: getTeammateNameDisplaySetting(state)
+        teammateNameDisplay: getTeammateNameDisplaySetting(state),
     };
 }
 

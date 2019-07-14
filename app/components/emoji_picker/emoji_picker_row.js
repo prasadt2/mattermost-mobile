@@ -1,13 +1,14 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
 import {
     StyleSheet,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
+import shallowEqual from 'shallow-equals';
 
 import Emoji from 'app/components/emoji';
 
@@ -16,11 +17,11 @@ export default class EmojiPickerRow extends Component {
         emojiGutter: PropTypes.number.isRequired,
         emojiSize: PropTypes.number.isRequired,
         items: PropTypes.array.isRequired,
-        onEmojiPress: PropTypes.func.isRequired
+        onEmojiPress: PropTypes.func.isRequired,
     }
 
     shouldComponentUpdate(nextProps) {
-        return this.props.items.length !== nextProps.items.length;
+        return !shallowEqual(this.props.items, nextProps.items);
     }
 
     renderEmojis = (emoji, index, emojis) => {
@@ -31,8 +32,8 @@ export default class EmojiPickerRow extends Component {
             {
                 width: emojiSize,
                 height: emojiSize,
-                marginHorizontal: emojiGutter
-            }
+                marginHorizontal: emojiGutter,
+            },
         ];
         if (index === 0) {
             style.push(styles.emojiLeft);
@@ -63,7 +64,7 @@ export default class EmojiPickerRow extends Component {
                 />
             </TouchableOpacity>
         );
-    }
+    };
 
     render() {
         const {emojiGutter, items} = this.props;
@@ -80,16 +81,17 @@ const styles = StyleSheet.create({
     columnStyle: {
         alignSelf: 'stretch',
         flexDirection: 'row',
-        justifyContent: 'space-between'
+        justifyContent: 'space-between',
     },
     emoji: {
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        overflow: 'hidden',
     },
     emojiLeft: {
-        marginLeft: 0
+        marginLeft: 0,
     },
     emojiRight: {
-        marginRight: 0
-    }
+        marginRight: 0,
+    },
 });

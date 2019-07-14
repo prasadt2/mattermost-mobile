@@ -1,12 +1,12 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {intlShape} from 'react-intl';
 import {
     Keyboard,
-    InteractionManager
+    InteractionManager,
 } from 'react-native';
 
 import {General, RequestStatus} from 'mattermost-redux/constants';
@@ -25,26 +25,26 @@ export default class CreateChannel extends PureComponent {
         channelType: PropTypes.string,
         closeButton: PropTypes.object,
         actions: PropTypes.shape({
-            handleCreateChannel: PropTypes.func.isRequired
-        })
+            handleCreateChannel: PropTypes.func.isRequired,
+        }),
     };
 
     static contextTypes = {
-        intl: intlShape
+        intl: intlShape,
     };
 
     static defaultProps = {
-        channelType: General.OPEN_CHANNEL
+        channelType: General.OPEN_CHANNEL,
     };
 
     leftButton = {
-        id: 'close-new-channel'
+        id: 'close-new-channel',
     };
 
     rightButton = {
         id: 'create-channel',
         disabled: true,
-        showAsAction: 'always'
+        showAsAction: 'always',
     };
 
     constructor(props, context) {
@@ -55,17 +55,17 @@ export default class CreateChannel extends PureComponent {
             creating: false,
             displayName: '',
             purpose: '',
-            header: ''
+            header: '',
         };
 
         this.rightButton.title = context.intl.formatMessage({id: 'mobile.create_channel', defaultMessage: 'Create'});
 
-        if (props.channelType === General.PRIVATE_CHANNEL) {
+        if (props.closeButton) {
             this.left = {...this.leftButton, icon: props.closeButton};
         }
 
         const buttons = {
-            rightButtons: [this.rightButton]
+            rightButtons: [this.rightButton],
         };
 
         if (this.left) {
@@ -110,19 +110,18 @@ export default class CreateChannel extends PureComponent {
     }
 
     close = (goBack = false) => {
-        EventEmitter.emit('closing-create-channel', false);
         if (goBack) {
             this.props.navigator.pop({animated: true});
         } else {
             this.props.navigator.dismissModal({
-                animationType: 'slide-down'
+                animationType: 'slide-down',
             });
         }
     };
 
     emitCanCreateChannel = (enabled) => {
         const buttons = {
-            rightButtons: [{...this.rightButton, disabled: !enabled}]
+            rightButtons: [{...this.rightButton, disabled: !enabled}],
         };
 
         if (this.left) {
@@ -134,7 +133,7 @@ export default class CreateChannel extends PureComponent {
 
     emitCreating = (loading) => {
         const buttons = {
-            rightButtons: [{...this.rightButton, disabled: loading}]
+            rightButtons: [{...this.rightButton, disabled: loading}],
         };
 
         if (this.left) {
@@ -154,7 +153,7 @@ export default class CreateChannel extends PureComponent {
         if (event.type === 'NavBarButtonPress') {
             switch (event.id) {
             case 'close-new-channel':
-                this.close(this.props.channelType === General.OPEN_CHANNEL);
+                this.close(!this.props.closeButton);
                 break;
             case 'create-channel':
                 this.onCreateChannel();
@@ -180,14 +179,14 @@ export default class CreateChannel extends PureComponent {
             navigator,
             theme,
             deviceWidth,
-            deviceHeight
+            deviceHeight,
         } = this.props;
         const {
             error,
             creating,
             displayName,
             purpose,
-            header
+            header,
         } = this.state;
 
         return (

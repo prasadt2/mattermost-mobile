@@ -1,24 +1,42 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
+import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
 
-import {getCurrentChannelId} from 'mattermost-redux/selectors/entities/channels';
+import {getAllChannels, getCurrentChannel, getDefaultChannel} from 'mattermost-redux/selectors/entities/channels';
 import {getCurrentTeamId} from 'mattermost-redux/selectors/entities/teams';
 import {getCurrentUserId} from 'mattermost-redux/selectors/entities/users';
+import {getConfig} from 'mattermost-redux/selectors/entities/general';
+
+import {getTeamChannels} from 'share_extension/android/actions';
+import {getAllowedServerMaxFileSize} from 'app/utils/file';
 
 import ExtensionPost from './extension_post';
 
 function mapStateToProps(state) {
-    const {token, url} = state.entities.general.credentials;
+    const config = getConfig(state);
+
+    let channel = getCurrentChannel(state);
+    if (channel && channel.delete_at !== 0) {
+        channel = getDefaultChannel(state);
+    }
 
     return {
-        channelId: getCurrentChannelId(state),
+        channelId: channel?.id,
+        channels: getAllChannels(state),
         currentUserId: getCurrentUserId(state),
+        maxFileSize: getAllowedServerMaxFileSize(config),
         teamId: getCurrentTeamId(state),
-        token,
-        url
     };
 }
 
-export default connect(mapStateToProps)(ExtensionPost);
+function mapDispatchToProps(dispatch) {
+    return {
+        actions: bindActionCreators({
+            getTeamChannels,
+        }, dispatch),
+    };
+}
+
+export default connect(mapStateToProps, mapDispatchToProps)(ExtensionPost);

@@ -1,154 +1,238 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {injectIntl, intlShape} from 'react-intl';
-import {
-    InteractionManager,
-    View
-} from 'react-native';
+import {intlShape} from 'react-intl';
+import {Platform, View} from 'react-native';
 
-import {General, RequestStatus} from 'mattermost-redux/constants';
+import {debounce} from 'mattermost-redux/actions/helpers';
+import {General} from 'mattermost-redux/constants';
 import EventEmitter from 'mattermost-redux/utils/event_emitter';
 import {getGroupDisplayNameFromUserIds} from 'mattermost-redux/utils/channel_utils';
 import {displayUsername, filterProfilesMatchingTerm} from 'mattermost-redux/utils/user_utils';
 
-import CustomSectionList from 'app/components/custom_section_list';
+import CustomList, {FLATLIST, SECTIONLIST} from 'app/components/custom_list';
 import UserListRow from 'app/components/custom_list/user_list_row';
+import FormattedText from 'app/components/formatted_text';
+import KeyboardLayout from 'app/components/layout/keyboard_layout';
 import Loading from 'app/components/loading';
 import SearchBar from 'app/components/search_bar';
 import StatusBar from 'app/components/status_bar';
 import {alertErrorWithFallback} from 'app/utils/general';
-import {loadingText} from 'app/utils/member_list';
+import {createProfilesSections, loadingText} from 'app/utils/member_list';
 import {changeOpacity, makeStyleSheetFromTheme, setNavigatorStyles} from 'app/utils/theme';
+import {t} from 'app/utils/i18n';
 
 import SelectedUsers from './selected_users';
 
 const START_BUTTON = 'start-conversation';
 const CLOSE_BUTTON = 'close-dms';
 
-class MoreDirectMessages extends PureComponent {
+export default class MoreDirectMessages extends PureComponent {
     static propTypes = {
-        currentDisplayName: PropTypes.string,
-        intl: intlShape.isRequired,
-        navigator: PropTypes.object,
-        config: PropTypes.object.isRequired,
-        currentUserId: PropTypes.string.isRequired,
-        currentTeamId: PropTypes.string.isRequired,
-        teammateNameDisplay: PropTypes.string,
-        theme: PropTypes.object.isRequired,
-        allProfiles: PropTypes.object.isRequired,
-        profiles: PropTypes.array.isRequired,
-        getRequest: PropTypes.object.isRequired,
-        searchRequest: PropTypes.object.isRequired,
         actions: PropTypes.shape({
             makeDirectChannel: PropTypes.func.isRequired,
             makeGroupChannel: PropTypes.func.isRequired,
             getProfiles: PropTypes.func.isRequired,
             getProfilesInTeam: PropTypes.func.isRequired,
             searchProfiles: PropTypes.func.isRequired,
-            setChannelDisplayName: PropTypes.func.isRequired
-        }).isRequired
+            setChannelDisplayName: PropTypes.func.isRequired,
+        }).isRequired,
+        allProfiles: PropTypes.object.isRequired,
+        currentDisplayName: PropTypes.string,
+        currentTeamId: PropTypes.string.isRequired,
+        currentUserId: PropTypes.string.isRequired,
+        navigator: PropTypes.object,
+        restrictDirectMessage: PropTypes.bool.isRequired,
+        teammateNameDisplay: PropTypes.string,
+        theme: PropTypes.object.isRequired,
     };
 
-    constructor(props) {
-        super(props);
+    static contextTypes = {
+        intl: intlShape.isRequired,
+    };
+
+    constructor(props, context) {
+        super(props, context);
 
         this.searchTimeoutId = 0;
+        this.next = true;
+        this.page = -1;
 
         this.state = {
-            profiles: props.profiles.slice(0, General.PROFILE_CHUNK_SIZE),
-            page: 0,
-            next: true,
-            searching: false,
-            showNoResults: false,
+            profiles: [],
+            searchResults: [],
+            loading: false,
             term: '',
-            canStartConversation: false,
-            loadingChannel: false,
-            canSelect: true,
+            startingConversation: false,
             selectedIds: {},
-            selectedCount: 0
+            selectedCount: 0,
         };
 
         props.navigator.setOnNavigatorEvent(this.onNavigatorEvent);
-        this.updateNavigationButtons(false);
+        this.updateNavigationButtons(false, context);
     }
 
     componentDidMount() {
-        // set the timeout to 400 cause is the time that the modal takes to open
-        // Somehow interactionManager doesn't care
-        setTimeout(() => {
-            this.getProfiles(0);
-        }, 400);
+        this.getProfiles();
     }
 
-    componentWillReceiveProps(nextProps) {
-        if (this.props.theme !== nextProps.theme) {
-            setNavigatorStyles(this.props.navigator, nextProps.theme);
-        }
+    componentDidUpdate(prevProps) {
+        const {navigator, theme} = this.props;
+        const {selectedCount, startingConversation} = this.state;
+        const canStart = selectedCount > 0 && !startingConversation;
 
-        const {getRequest} = this.props;
-        if (getRequest.status === RequestStatus.STARTED &&
-            nextProps.getRequest.status === RequestStatus.SUCCESS) {
-            const profiles = this.sliceProfiles(nextProps.profiles);
-            this.setState({profiles, showNoResults: true});
-        } else if (this.state.searching &&
-            nextProps.searchRequest.status === RequestStatus.SUCCESS) {
-            let results = filterProfilesMatchingTerm(nextProps.profiles, this.state.term);
+        this.updateNavigationButtons(canStart);
 
-            if (this.state.selectedCount > 0) {
-                results = this.removeCurrentUserFromProfiles(results);
-            }
-
-            this.setState({profiles: results, showNoResults: true});
+        if (theme !== prevProps.theme) {
+            setNavigatorStyles(navigator, theme);
         }
     }
 
-    componentDidUpdate(prevProps, prevState) {
-        const startEnabled = this.isStartEnabled(this.state);
-        const wasStartEnabled = this.isStartEnabled(prevState);
+    close = () => {
+        this.props.navigator.dismissModal({animationType: 'slide-down'});
+    };
 
-        if (startEnabled && !wasStartEnabled) {
-            this.updateNavigationButtons(true);
-        } else if (!startEnabled && !wasStartEnabled) {
-            this.updateNavigationButtons(false);
+    clearSearch = () => {
+        this.setState({term: '', searchResults: []});
+    };
+
+    getProfiles = debounce(() => {
+        const {loading, term} = this.state;
+        if (this.next && !loading && !term) {
+            this.setState({loading: true}, () => {
+                const {actions, currentTeamId, restrictDirectMessage} = this.props;
+
+                if (restrictDirectMessage) {
+                    actions.getProfiles(this.page + 1, General.PROFILE_CHUNK_SIZE).then(this.loadedProfiles);
+                } else {
+                    actions.getProfilesInTeam(currentTeamId, this.page + 1, General.PROFILE_CHUNK_SIZE).then(this.loadedProfiles);
+                }
+            });
         }
-    }
+    }, 100);
 
-    removeCurrentUserFromProfiles(profiles = []) {
-        return profiles.filter((profile) => {
-            return profile.id !== this.props.currentUserId;
+    handleSelectProfile = (id) => {
+        const {currentUserId} = this.props;
+
+        if (id === currentUserId) {
+            const selectedId = {};
+            selectedId[currentUserId] = true;
+
+            this.startConversation(selectedId);
+        } else {
+            this.setState((prevState) => {
+                const {selectedIds} = prevState;
+
+                const wasSelected = selectedIds[id];
+
+                // Prevent selecting too many users
+                if (!wasSelected && Object.keys(selectedIds).length >= General.MAX_USERS_IN_GM - 1) {
+                    return {};
+                }
+
+                const newSelectedIds = Object.assign({}, selectedIds);
+                if (!wasSelected) {
+                    newSelectedIds[id] = true;
+                }
+
+                return {
+                    selectedIds: newSelectedIds,
+                    selectedCount: Object.keys(newSelectedIds).length,
+                };
+            });
+
+            this.clearSearch();
+        }
+    };
+
+    handleRemoveProfile = (id) => {
+        this.setState((prevState) => {
+            const {selectedIds} = prevState;
+
+            const newSelectedIds = Object.assign({}, selectedIds);
+
+            Reflect.deleteProperty(newSelectedIds, id);
+
+            return {
+                selectedIds: newSelectedIds,
+                selectedCount: Object.keys(newSelectedIds).length,
+            };
         });
-    }
-
-    sliceProfiles(profiles = []) {
-        return profiles.slice(0, (this.state.page + 1) * General.PROFILE_CHUNK_SIZE);
-    }
+    };
 
     isStartEnabled = (state) => {
-        if (state.loadingChannel) {
+        if (state.startingConversation) {
             return false;
         }
 
         return state.selectedCount >= 1 && state.selectedCount <= General.MAX_USERS_IN_GM - 1;
     };
 
-    updateNavigationButtons = (startEnabled) => {
-        this.props.navigator.setButtons({
-            rightButtons: [{
-                id: START_BUTTON,
-                title: this.props.intl.formatMessage({id: 'mobile.more_dms.start', defaultMessage: 'Start'}),
-                showAsAction: 'always',
-                disabled: !startEnabled
-            }]
-        });
+    loadedProfiles = ({data}) => {
+        const {profiles} = this.state;
+        if (data && !data.length) {
+            this.next = false;
+        }
+
+        this.page += 1;
+        this.setState({loading: false, profiles: [...profiles, ...data]});
     };
 
-    close = () => {
-        this.props.navigator.dismissModal({
-            animationType: 'slide-down'
-        });
+    makeDirectChannel = async (id) => {
+        const {intl} = this.context;
+        const {actions, allProfiles, teammateNameDisplay} = this.props;
+
+        const user = allProfiles[id];
+
+        const displayName = displayUsername(user, teammateNameDisplay);
+        actions.setChannelDisplayName(displayName);
+
+        const result = await actions.makeDirectChannel(id);
+
+        if (result.error) {
+            alertErrorWithFallback(
+                intl,
+                result.error,
+                {
+                    id: 'mobile.open_dm.error',
+                    defaultMessage: "We couldn't open a direct message with {displayName}. Please check your connection and try again.",
+                },
+                {
+                    displayName,
+                }
+            );
+        }
+
+        return !result.error;
+    };
+
+    makeGroupChannel = async (ids) => {
+        const {intl} = this.context;
+        const {
+            actions,
+            allProfiles,
+            currentUserId,
+            teammateNameDisplay,
+        } = this.props;
+
+        const result = await actions.makeGroupChannel(ids);
+        const displayName = getGroupDisplayNameFromUserIds(ids, allProfiles, currentUserId, teammateNameDisplay);
+        actions.setChannelDisplayName(displayName);
+
+        if (result.error) {
+            alertErrorWithFallback(
+                intl,
+                result.error,
+                {
+                    id: t('mobile.open_gm.error'),
+                    defaultMessage: "We couldn't open a group message with those users. Please check your connection and try again.",
+                }
+            );
+        }
+
+        return !result.error;
     };
 
     onNavigatorEvent = (event) => {
@@ -162,156 +246,46 @@ class MoreDirectMessages extends PureComponent {
     };
 
     onSearch = (text) => {
-        const term = text.toLowerCase();
-
-        if (term) {
-            this.setState({searching: true, term});
+        if (text) {
+            this.setState({term: text});
             clearTimeout(this.searchTimeoutId);
 
             this.searchTimeoutId = setTimeout(() => {
-                this.searchProfiles(term);
+                this.searchProfiles(text);
             }, General.SEARCH_TIMEOUT_MILLISECONDS);
         } else {
-            this.cancelSearch();
+            this.clearSearch();
         }
-    };
-
-    cancelSearch = () => {
-        const {profiles} = this.props;
-
-        let newProfiles;
-        if (this.state.selectedCount > 0) {
-            newProfiles = this.removeCurrentUserFromProfiles(profiles);
-        } else {
-            newProfiles = this.sliceProfiles(profiles);
-        }
-
-        this.setState({
-            searching: false,
-            term: '',
-            page: 0,
-            profiles: newProfiles
-        });
-    };
-
-    getProfiles = (page) => {
-        if (this.props.config.RestrictDirectMessage === General.RESTRICT_DIRECT_MESSAGE_ANY) {
-            return this.props.actions.getProfiles(page, General.PROFILE_CHUNK_SIZE);
-        }
-
-        return this.props.actions.getProfilesInTeam(page, General.PROFILE_CHUNK_SIZE);
     };
 
     searchProfiles = (term) => {
-        if (this.props.config.RestrictDirectMessage === General.RESTRICT_DIRECT_MESSAGE_ANY) {
-            return this.props.actions.searchProfiles(term);
-        }
+        const lowerCasedTerm = term.toLowerCase();
+        const {actions, currentTeamId, restrictDirectMessage} = this.props;
+        this.setState({loading: true});
 
-        return this.props.actions.searchProfiles(term, {team_id: this.props.currentTeamId});
-    };
-
-    loadMoreProfiles = () => {
-        if (this.state.searching) {
-            return;
-        }
-
-        let {page} = this.state;
-        if (this.props.getRequest.status !== RequestStatus.STARTED && this.state.next && !this.state.searching) {
-            page = page + 1;
-            this.getProfiles(page).then(({data}) => {
-                if (data && data.length) {
-                    this.setState({
-                        page
-                    });
-                } else {
-                    this.setState({next: false});
-                }
+        if (restrictDirectMessage) {
+            actions.searchProfiles(lowerCasedTerm).then(({data}) => {
+                this.setState({searchResults: data, loading: false});
             });
-        }
-    };
-
-    handleSelectUser = (id) => {
-        const {currentUserId} = this.props;
-
-        if (id === currentUserId) {
-            const selectedId = {};
-            selectedId[currentUserId] = true;
-
-            this.startConversation(selectedId);
         } else {
-            this.setState((prevState) => {
-                const {
-                    profiles,
-                    selectedCount,
-                    selectedIds
-                } = prevState;
-
-                const wasSelected = selectedIds[id];
-
-                // Prevent selecting too many users
-                if (!wasSelected && Object.keys(selectedIds).length >= General.MAX_USERS_IN_GM - 1) {
-                    return {};
-                }
-
-                const newSelectedIds = Object.assign({}, selectedIds);
-
-                let newProfiles = profiles;
-                if (wasSelected) {
-                    Reflect.deleteProperty(newSelectedIds, id);
-                    if (selectedCount === 1) {
-                        newProfiles = this.sliceProfiles(this.props.profiles);
-                    }
-                } else {
-                    newSelectedIds[id] = true;
-                    newProfiles = this.removeCurrentUserFromProfiles(profiles);
-                }
-
-                return {
-                    profiles: newProfiles,
-                    selectedIds: newSelectedIds,
-                    selectedCount: Object.keys(newSelectedIds).length
-                };
+            actions.searchProfiles(lowerCasedTerm, {team_id: currentTeamId}).then(({data}) => {
+                this.setState({searchResults: data, loading: false});
             });
         }
     };
-
-    handleRemoveUser = (id) => {
-        this.setState((prevState) => {
-            const {
-                profiles,
-                selectedCount,
-                selectedIds
-            } = prevState;
-
-            const newSelectedIds = Object.assign({}, selectedIds);
-
-            Reflect.deleteProperty(newSelectedIds, id);
-
-            let newProfiles = profiles;
-            if (selectedCount === 1) {
-                newProfiles = this.sliceProfiles(this.props.profiles);
-            }
-
-            return {
-                profiles: newProfiles,
-                selectedIds: newSelectedIds,
-                selectedCount: Object.keys(newSelectedIds).length
-            };
-        });
-    }
 
     startConversation = async (selectedId) => {
         const {
             currentDisplayName,
-            actions
+            actions,
         } = this.props;
 
-        if (this.state.loadingChannel) {
+        if (this.state.startingConversation) {
             return;
         }
 
         this.setState({
-            loadingChannel: true
+            startingConversation: true,
         });
 
         // Save the current channel display name in case it fails
@@ -329,93 +303,33 @@ class MoreDirectMessages extends PureComponent {
 
         if (success) {
             EventEmitter.emit('close_channel_drawer');
-            InteractionManager.runAfterInteractions(() => {
+            requestAnimationFrame(() => {
                 this.close();
             });
         } else {
             this.setState({
-                loadingChannel: false
+                startingConversation: false,
             });
 
             actions.setChannelDisplayName(currentChannelDisplayName);
         }
     };
 
-    makeGroupChannel = async (ids) => {
-        const {
-            actions,
-            allProfiles,
-            currentUserId,
-            intl,
-            teammateNameDisplay
-        } = this.props;
-
-        const result = await actions.makeGroupChannel(ids);
-
-        const displayName = getGroupDisplayNameFromUserIds(ids, allProfiles, currentUserId, teammateNameDisplay);
-        actions.setChannelDisplayName(displayName);
-
-        if (result.error) {
-            alertErrorWithFallback(
-                intl,
-                result.error,
-                {
-                    id: 'mobile.open_gm.error',
-                    defaultMessage: "We couldn't open a group message with those users. Please check your connection and try again."
-                }
-            );
-        }
-
-        return !result.error;
-    };
-
-    makeDirectChannel = async (id) => {
-        const {
-            actions,
-            intl,
-            teammateNameDisplay
-        } = this.props;
-
-        const user = this.state.profiles[id];
-
-        const displayName = displayUsername(user, teammateNameDisplay);
-        actions.setChannelDisplayName(displayName);
-
-        const result = await actions.makeDirectChannel(id);
-
-        if (result.error) {
-            alertErrorWithFallback(
-                intl,
-                result.error,
-                {
-                    id: 'mobile.open_dm.error',
-                    defaultMessage: "We couldn't open a direct message with {displayName}. Please check your connection and try again."
-                },
-                {
-                    displayName
-                }
-            );
-        }
-
-        return !result.error;
-    };
-
-    sectionKeyExtractor = (user) => {
-        // Group items alphabetically by first letter
-        return displayUsername(user, this.props.teammateNameDisplay)[0].toUpperCase();
-    }
-
-    compareItems = (a, b) => {
-        const aName = displayUsername(a, this.props.teammateNameDisplay);
-        const bName = displayUsername(b, this.props.teammateNameDisplay);
-
-        return aName.localeCompare(bName);
+    updateNavigationButtons = (startEnabled, context = this.context) => {
+        const {formatMessage} = context.intl;
+        this.props.navigator.setButtons({
+            rightButtons: [{
+                id: START_BUTTON,
+                title: formatMessage({id: 'mobile.more_dms.start', defaultMessage: 'Start'}),
+                showAsAction: 'always',
+                disabled: !startEnabled,
+            }],
+        });
     };
 
     renderItem = (props) => {
         // The list will re-render when the selection changes because it's passed into the list as extraData
         const selected = this.state.selectedIds[props.id];
-        const enabled = selected || this.state.selectedCount < General.MAX_USERS_IN_GM - 1;
 
         return (
             <UserListRow
@@ -423,29 +337,65 @@ class MoreDirectMessages extends PureComponent {
                 {...props}
                 selectable={true}
                 selected={selected}
-                enabled={enabled}
+                enabled={true}
             />
         );
     };
 
-    render() {
-        const {
-            getRequest,
-            searchRequest,
-            theme
-        } = this.props;
-        const {
-            loadingChannel,
-            showNoResults,
-            term
-        } = this.state;
-
-        const isLoading = (
-            getRequest.status === RequestStatus.STARTED) || (getRequest.status === RequestStatus.NOT_STARTED) ||
-            (searchRequest.status === RequestStatus.STARTED);
+    renderLoading = () => {
+        const {theme} = this.props;
+        const {loading} = this.state;
         const style = getStyleFromTheme(theme);
 
-        if (loadingChannel) {
+        if (!loading) {
+            return null;
+        }
+
+        return (
+            <View style={style.loadingContainer}>
+                <FormattedText
+                    {...loadingText}
+                    style={style.loadingText}
+                />
+            </View>
+        );
+    };
+
+    renderNoResults = () => {
+        const {loading} = this.state;
+        const {theme} = this.props;
+        const style = getStyleFromTheme(theme);
+
+        if (loading || this.page === -1) {
+            return null;
+        }
+
+        return (
+            <View style={style.noResultContainer}>
+                <FormattedText
+                    id='mobile.custom_list.no_results'
+                    defaultMessage='No Results'
+                    style={style.noResultText}
+                />
+            </View>
+        );
+    };
+
+    render() {
+        const {formatMessage} = this.context.intl;
+        const {currentUserId, theme} = this.props;
+        const {
+            loading,
+            profiles,
+            searchResults,
+            selectedIds,
+            selectedCount,
+            startingConversation,
+            term,
+        } = this.state;
+        const style = getStyleFromTheme(theme);
+
+        if (startingConversation) {
             return (
                 <View style={style.container}>
                     <StatusBar/>
@@ -454,55 +404,82 @@ class MoreDirectMessages extends PureComponent {
             );
         }
 
+        const searchBarInput = {
+            backgroundColor: changeOpacity(theme.centerChannelColor, 0.2),
+            color: theme.centerChannelColor,
+            fontSize: 15,
+            ...Platform.select({
+                android: {
+                    marginBottom: -5,
+                },
+            }),
+        };
+
+        let data;
+        let listType;
+        if (term) {
+            const exactMatches = [];
+            const results = filterProfilesMatchingTerm(searchResults, term).filter((p) => {
+                if (selectedCount > 0 && p.id === currentUserId) {
+                    return false;
+                }
+
+                if (p.username === term || p.username.startsWith(term)) {
+                    exactMatches.push(p);
+                    return false;
+                }
+
+                return true;
+            });
+            data = [...exactMatches, ...results];
+            listType = FLATLIST;
+        } else {
+            data = createProfilesSections(profiles);
+            listType = SECTIONLIST;
+        }
+
         return (
-            <View style={style.container}>
+            <KeyboardLayout>
                 <StatusBar/>
-                <View style={style.searchContainer}>
+                <View style={style.searchBar}>
                     <SearchBar
                         ref='search_bar'
-                        placeholder={this.props.intl.formatMessage({id: 'search_bar.search', defaultMessage: 'Search'})}
-                        cancelTitle={this.props.intl.formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'})}
+                        placeholder={formatMessage({id: 'search_bar.search', defaultMessage: 'Search'})}
+                        cancelTitle={formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'})}
                         backgroundColor='transparent'
                         inputHeight={33}
-                        inputStyle={{
-                            backgroundColor: changeOpacity(theme.centerChannelColor, 0.2),
-                            color: theme.centerChannelColor,
-                            fontSize: 15,
-                            lineHeight: 66
-                        }}
+                        inputStyle={searchBarInput}
                         placeholderTextColor={changeOpacity(theme.centerChannelColor, 0.5)}
                         tintColorSearch={changeOpacity(theme.centerChannelColor, 0.5)}
                         tintColorDelete={changeOpacity(theme.centerChannelColor, 0.5)}
                         titleCancelColor={theme.centerChannelColor}
                         onChangeText={this.onSearch}
                         onSearchButtonPress={this.onSearch}
-                        onCancelButtonPress={this.cancelSearch}
+                        onCancelButtonPress={this.clearSearch}
+                        autoCapitalize='none'
                         value={term}
                     />
                     <SelectedUsers
                         selectedIds={this.state.selectedIds}
                         warnCount={5}
-                        warnMessage={{id: 'mobile.more_dms.add_more', defaultMessage: 'You can add {remaining, number} more users'}}
                         maxCount={7}
-                        maxMessage={{id: 'mobile.more_dms.cannot_add_more', defaultMessage: 'You cannot add more users'}}
-                        onRemove={this.handleRemoveUser}
+                        onRemove={this.handleRemoveProfile}
                     />
                 </View>
-                <CustomSectionList
-                    theme={theme}
-                    items={this.state.profiles}
+                <CustomList
+                    data={data}
+                    extraData={selectedIds}
+                    key='custom_list'
+                    listType={listType}
+                    loading={loading}
+                    loadingComponent={this.renderLoading()}
+                    noResults={this.renderNoResults()}
+                    onLoadMore={this.getProfiles}
+                    onRowPress={this.handleSelectProfile}
                     renderItem={this.renderItem}
-                    showNoResults={showNoResults}
-                    sectionKeyExtractor={this.sectionKeyExtractor}
-                    compareItems={this.compareItems}
-                    extraData={this.state.selectedIds}
-                    onListEndReached={this.loadMoreProfiles}
-                    listScrollRenderAheadDistance={50}
-                    onRowPress={this.handleSelectUser}
-                    loading={isLoading}
-                    loadingText={loadingText}
+                    theme={theme}
                 />
-            </View>
+            </KeyboardLayout>
         );
     }
 }
@@ -511,12 +488,28 @@ const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
         },
-        searchContainer: {
-            marginVertical: 5
-        }
+        searchBar: {
+            marginVertical: 5,
+        },
+        loadingContainer: {
+            alignItems: 'center',
+            backgroundColor: theme.centerChannelBg,
+            height: 70,
+            justifyContent: 'center',
+        },
+        loadingText: {
+            color: changeOpacity(theme.centerChannelColor, 0.6),
+        },
+        noResultContainer: {
+            flexGrow: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        noResultText: {
+            fontSize: 26,
+            color: changeOpacity(theme.centerChannelColor, 0.5),
+        },
     };
 });
-
-export default injectIntl(MoreDirectMessages);

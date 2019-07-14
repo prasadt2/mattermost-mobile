@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -9,8 +9,8 @@ import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
 
 export default class ChannelDisplayName extends PureComponent {
     static propTypes = {
-        displayName: PropTypes.string.isRequired,
-        theme: PropTypes.object.isRequired
+        displayName: PropTypes.string,
+        theme: PropTypes.object.isRequired,
     };
 
     render() {
@@ -30,7 +30,7 @@ const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
             fontSize: 14,
             fontWeight: '600',
             marginTop: 5,
-            paddingHorizontal: 16
-        }
+            paddingHorizontal: 16,
+        },
     };
 });

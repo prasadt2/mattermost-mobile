@@ -1,5 +1,5 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import Config from 'assets/config.json';
 
@@ -12,7 +12,7 @@ const state = {
             dataRetentionPolicy: {},
             deviceToken: '',
             license: {},
-            serverVersion: ''
+            serverVersion: '',
         },
         users: {
             currentUserId: '',
@@ -22,268 +22,169 @@ const state = {
             profilesInTeam: {},
             profilesInChannel: {},
             profilesNotInChannel: {},
-            statuses: {}
+            statuses: {},
         },
         teams: {
             currentTeamId: '',
             teams: {},
             myMembers: {},
             membersInTeam: {},
-            stats: {}
+            stats: {},
         },
         channels: {
             currentChannelId: '',
             channels: {},
             myMembers: {},
-            stats: {}
+            stats: {},
         },
         posts: {
             posts: {},
             postsInChannel: {},
+            postsInThread: {},
             selectedPostId: '',
-            currentFocusedPostId: ''
+            currentFocusedPostId: '',
         },
         preferences: {
-            myPreferences: {}
+            myPreferences: {},
         },
         search: {
-            recent: []
+            recent: [],
         },
-        typing: {}
+        typing: {},
     },
     errors: [],
     requests: {
         channels: {
-            getChannel: {
-                status: 'not_started',
-                error: null
-            },
             getChannels: {
                 status: 'not_started',
-                error: null
-            },
-            myMembers: {
-                status: 'not_started',
-                error: null
+                error: null,
             },
             createChannel: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             updateChannel: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            updateChannelNotifyProps: {
+            myChannels: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            joinChannel: {
-                status: 'not_started',
-                error: null
-            },
-            deleteChannel: {
-                status: 'not_started',
-                error: null
-            },
-            updateLastViewedAt: {
-                status: 'not_started',
-                error: null
-            },
-            getChannelStats: {
-                status: 'not_started',
-                error: null
-            },
-            addChannelMember: {
-                status: 'not_started',
-                error: null
-            },
-            removeChannelMember: {
-                status: 'not_started',
-                error: null
-            }
         },
         general: {
             server: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             config: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             dataRetentionPolicy: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             license: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             websocket: {
                 status: 'not_started',
-                error: null
-            }
+                error: null,
+            },
         },
         posts: {
             createPost: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             editPost: {
                 status: 'not_started',
-                error: null
-            },
-            deletePost: {
-                status: 'not_started',
-                error: null
+                error: null,
             },
             getPostThread: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            getPosts: {
-                status: 'not_started',
-                error: null
-            },
-            getPostsSince: {
-                status: 'not_started',
-                error: null
-            },
-            getPostsBefore: {
-                status: 'not_started',
-                error: null
-            },
-            getPostsAfter: {
-                status: 'not_started',
-                error: null
-            }
         },
         teams: {
             getMyTeams: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             getTeams: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            createTeam: {
+            joinTeam: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            updateTeam: {
-                status: 'not_started',
-                error: null
-            },
-            getMyTeamMembers: {
-                status: 'not_started',
-                error: null
-            },
-            getTeamMembers: {
-                status: 'not_started',
-                error: null
-            },
-            getTeamStats: {
-                status: 'not_started',
-                error: null
-            },
-            addUserToTeam: {
-                status: 'not_started',
-                error: null
-            },
-            removeUserFromTeam: {
-                status: 'not_started',
-                error: null
-            }
         },
         users: {
             login: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             logout: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            getProfiles: {
+            autocompleteUsers: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            getProfilesInTeam: {
+            updateMe: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
-            getProfilesInChannel: {
-                status: 'not_started',
-                error: null
-            },
-            getProfilesNotInChannel: {
-                status: 'not_started',
-                error: null
-            },
-            getStatusesByIds: {
-                status: 'not_started',
-                error: null
-            },
-            getSessions: {
-                status: 'not_started',
-                error: null
-            },
-            revokeSession: {
-                status: 'not_started',
-                error: null
-            },
-            getAudits: {
-                status: 'not_started',
-                error: null
-            }
         },
         preferences: {
             getMyPreferences: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             savePreferences: {
                 status: 'not_started',
-                error: null
+                error: null,
             },
             deletePreferences: {
                 status: 'not_started',
-                error: null
-            }
-        }
+                error: null,
+            },
+        },
     },
     device: {
-        connection: true
+        connection: true,
     },
     navigation: '',
     views: {
         channel: {
-            drafts: {}
+            drafts: {},
         },
-        fetchCache: {},
         i18n: {
-            locale: ''
+            locale: '',
         },
         login: {
             loginId: '',
-            password: ''
+            password: '',
         },
         root: {
+            deepLinkURL: '',
             hydrationComplete: false,
-            purge: false
+            purge: false,
         },
         selectServer: {
-            serverUrl: Config.DefaultServerUrl
+            serverUrl: Config.DefaultServerUrl,
         },
         team: {
-            lastTeamId: ''
+            lastTeamId: '',
         },
         thread: {
-            drafts: {}
-        }
-    }
+            drafts: {},
+        },
+    },
 };
 
 export default state;

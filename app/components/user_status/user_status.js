@@ -1,30 +1,37 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
+import {Image} from 'react-native';
 import PropTypes from 'prop-types';
 
 import {General} from 'mattermost-redux/constants';
 
-import {AwayIcon, DndIcon, OfflineIcon, OnlineIcon} from 'app/components/status_icons';
+import {changeOpacity} from 'app/utils/theme';
+
+import away from 'assets/images/status/away.png';
+import dnd from 'assets/images/status/dnd.png';
+import offline from 'assets/images/status/offline.png';
+import online from 'assets/images/status/online.png';
 
 const statusToIcon = {
-    away: AwayIcon,
-    dnd: DndIcon,
-    offline: OfflineIcon,
-    online: OnlineIcon
+    away,
+    dnd,
+    offline,
+    ooo: offline,
+    online,
 };
 
 export default class UserStatus extends PureComponent {
     static propTypes = {
         size: PropTypes.number,
         status: PropTypes.string,
-        theme: PropTypes.object.isRequired
+        theme: PropTypes.object.isRequired,
     };
 
     static defaultProps = {
         size: 14,
-        status: General.OFFLINE
+        status: General.OFFLINE,
     };
 
     render() {
@@ -43,15 +50,14 @@ export default class UserStatus extends PureComponent {
             iconColor = theme.onlineIndicator;
             break;
         default:
-            iconColor = theme.centerChannelColor;
+            iconColor = changeOpacity(theme.centerChannelColor, 0.3);
             break;
         }
 
         return (
-            <Icon
-                height={size}
-                width={size}
-                color={iconColor}
+            <Image
+                source={Icon}
+                style={{height: size, width: size, tintColor: iconColor}}
             />
         );
     }

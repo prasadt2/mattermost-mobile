@@ -1,9 +1,11 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {View} from 'react-native';
+import {Platform, View} from 'react-native';
+
+import {getLastPostIndex} from 'mattermost-redux/utils/post_list';
 
 import PostList from 'app/components/post_list';
 import {makeStyleSheetFromTheme} from 'app/utils/theme';
@@ -12,18 +14,19 @@ export default class ChannelPeek extends PureComponent {
     static propTypes = {
         actions: PropTypes.shape({
             loadPostsIfNecessaryWithRetry: PropTypes.func.isRequired,
-            markChannelAsRead: PropTypes.func.isRequired
+            markChannelViewedAndRead: PropTypes.func.isRequired,
         }).isRequired,
         channelId: PropTypes.string.isRequired,
         currentUserId: PropTypes.string,
         lastViewedAt: PropTypes.number,
         navigator: PropTypes.object,
         postIds: PropTypes.array.isRequired,
-        theme: PropTypes.object.isRequired
+        theme: PropTypes.object.isRequired,
     };
 
     static defaultProps = {
-        postVisibility: 15
+        postIds: [],
+        postVisibility: 15,
     };
 
     constructor(props) {
@@ -32,7 +35,7 @@ export default class ChannelPeek extends PureComponent {
         this.props.navigator.setOnNavigatorEvent(this.onNavigatorEvent);
         props.actions.loadPostsIfNecessaryWithRetry(props.channelId);
         this.state = {
-            visiblePostIds: this.getVisiblePostIds(props)
+            visiblePostIds: this.getVisiblePostIds(props),
         };
     }
 
@@ -46,7 +49,7 @@ export default class ChannelPeek extends PureComponent {
         }
 
         this.setState({
-            visiblePostIds
+            visiblePostIds,
         });
     }
 
@@ -58,7 +61,7 @@ export default class ChannelPeek extends PureComponent {
         if (event.type === 'PreviewActionPress') {
             if (event.id === 'action-mark-as-read') {
                 const {actions, channelId} = this.props;
-                actions.markChannelAsRead(channelId);
+                actions.markChannelViewedAndRead(channelId);
             }
         }
     };
@@ -69,7 +72,7 @@ export default class ChannelPeek extends PureComponent {
             currentUserId,
             lastViewedAt,
             navigator,
-            theme
+            theme,
         } = this.props;
 
         const {visiblePostIds} = this.state;
@@ -79,7 +82,7 @@ export default class ChannelPeek extends PureComponent {
             <View style={style.container}>
                 <PostList
                     postIds={visiblePostIds}
-                    showLoadMore={false}
+                    lastPostIndex={Platform.OS === 'android' ? getLastPostIndex(visiblePostIds) : -1}
                     renderReplies={true}
                     indicateNewMessages={true}
                     currentUserId={currentUserId}
@@ -96,7 +99,7 @@ const getStyle = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
-        }
+            backgroundColor: theme.centerChannelBg,
+        },
     };
 });

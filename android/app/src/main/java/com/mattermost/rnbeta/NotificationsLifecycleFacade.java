@@ -10,6 +10,7 @@ import android.content.IntentFilter;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.ArraySet;
+import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
 import android.content.res.Configuration;
 
@@ -39,12 +40,11 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
 
     private final BroadcastReceiver restrictionsReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
-
-            if (mVisibleActivity != null) {
+            if (context != null) {
                 // Get the current configuration bundle
                 RestrictionsManager myRestrictionsMgr =
-                    (RestrictionsManager) mVisibleActivity
-                            .getSystemService(Context.RESTRICTIONS_SERVICE);
+                        (RestrictionsManager) context
+                                .getSystemService(Context.RESTRICTIONS_SERVICE);
                 managedConfig = myRestrictionsMgr.getApplicationRestrictions();
 
                 // Check current configuration settings, change your app's UI and
@@ -66,12 +66,16 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
     @Override
     public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
         MattermostManagedModule managedModule = MattermostManagedModule.getInstance();
-        if (managedModule != null && managedModule.isBlurAppScreenEnabled()) {
+        if (managedModule != null && managedModule.isBlurAppScreenEnabled() && activity != null) {
             activity.getWindow().setFlags(LayoutParams.FLAG_SECURE,
                     LayoutParams.FLAG_SECURE);
         }
-        if (managedConfig!= null && managedConfig.size() > 0) {
+        if (managedConfig != null && managedConfig.size() > 0 && activity != null) {
             activity.registerReceiver(restrictionsReceiver, restrictionsFilter);
+        }
+
+        if (activity != null) {
+            activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
     }
 
@@ -79,9 +83,11 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
     public void onActivityResumed(Activity activity) {
         switchToVisible(activity);
 
-        if (managedConfig != null && managedConfig.size() > 0) {
+        ReactContext ctx = getRunningReactContext();
+        if (managedConfig != null && managedConfig.size() > 0 && ctx != null) {
+
             RestrictionsManager myRestrictionsMgr =
-                    (RestrictionsManager) activity
+                    (RestrictionsManager) ctx
                             .getSystemService(Context.RESTRICTIONS_SERVICE);
 
             Bundle newConfig = myRestrictionsMgr.getApplicationRestrictions();
@@ -174,13 +180,15 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
         }
     }
 
-    public synchronized void LoadManagedConfig(Activity activity) {
-        RestrictionsManager myRestrictionsMgr =
-                (RestrictionsManager) activity
-                        .getSystemService(Context.RESTRICTIONS_SERVICE);
+    public synchronized void LoadManagedConfig(ReactContext ctx) {
+        if (ctx != null) {
+            RestrictionsManager myRestrictionsMgr =
+                    (RestrictionsManager) ctx
+                            .getSystemService(Context.RESTRICTIONS_SERVICE);
 
-        managedConfig = myRestrictionsMgr.getApplicationRestrictions();
-        myRestrictionsMgr = null;
+            managedConfig = myRestrictionsMgr.getApplicationRestrictions();
+            myRestrictionsMgr = null;
+        }
     }
 
     public synchronized Bundle getManagedConfig() {
@@ -188,8 +196,10 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
             return managedConfig;
         }
 
-        if (mVisibleActivity != null) {
-            LoadManagedConfig(mVisibleActivity);
+        ReactContext ctx = getRunningReactContext();
+
+        if (ctx != null) {
+            LoadManagedConfig(ctx);
             return managedConfig;
         }
 
@@ -198,9 +208,11 @@ public class NotificationsLifecycleFacade extends ActivityCallbacks implements A
 
     public void sendConfigChanged(Bundle config) {
         Object result = Arguments.fromBundle(config);
-        getRunningReactContext().
-                getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).
-                emit("managedConfigDidChange", result);
+        ReactContext ctx = getRunningReactContext();
+        if (ctx != null) {
+            ctx.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).
+                    emit("managedConfigDidChange", result);
+        }
     }
 
     private boolean equalBundles(Bundle one, Bundle two) {

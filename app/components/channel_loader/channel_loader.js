@@ -1,85 +1,145 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {
-    Platform,
-    View
+    View,
+    Dimensions,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import {ImageContent} from 'rn-placeholder';
 
+import EventEmitter from 'mattermost-redux/utils/event_emitter';
+
+import CustomPropTypes from 'app/constants/custom_prop_types';
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
 
-const GRADIENT_START = 0.05;
-const GRADIENT_MIDDLE = 0.1;
-const GRADIENT_END = 0.01;
+function calculateMaxRows(height) {
+    return Math.round(height / 100);
+}
 
 export default class ChannelLoader extends PureComponent {
     static propTypes = {
+        actions: PropTypes.shape({
+            handleSelectChannel: PropTypes.func.isRequired,
+            setChannelLoading: PropTypes.func.isRequired,
+        }).isRequired,
+        backgroundColor: PropTypes.string,
         channelIsLoading: PropTypes.bool.isRequired,
-        deviceWidth: PropTypes.number.isRequired,
-        theme: PropTypes.object.isRequired
+        style: CustomPropTypes.Style,
+        theme: PropTypes.object.isRequired,
+        height: PropTypes.number,
     };
 
-    buildSections(key, style, top) {
+    constructor(props) {
+        super(props);
+
+        const height = props.height || Dimensions.get('window').height;
+        const maxRows = calculateMaxRows(height);
+
+        this.state = {
+            switch: false,
+            maxRows,
+        };
+    }
+
+    static getDerivedStateFromProps(nextProps, prevState) {
+        const state = {};
+
+        if (nextProps.height) {
+            state.maxRows = calculateMaxRows(nextProps.height);
+        }
+        if (!nextProps.channelIsLoading && prevState.switch) {
+            state.switch = false;
+            state.channel = null;
+        }
+
+        return Object.keys(state) ? state : null;
+    }
+
+    componentDidMount() {
+        EventEmitter.on('switch_channel', this.handleChannelSwitch);
+    }
+
+    componentWillUnmount() {
+        EventEmitter.off('switch_channel', this.handleChannelSwitch);
+    }
+
+    componentDidUpdate() {
+        if (this.state.switch) {
+            const {
+                handleSelectChannel,
+                setChannelLoading,
+            } = this.props.actions;
+
+            const {channel} = this.state;
+
+            setTimeout(() => {
+                handleSelectChannel(channel.id);
+                setChannelLoading(false);
+            }, 250);
+        }
+    }
+
+    buildSections({key, style, bg, color}) {
         return (
             <View
                 key={key}
-                style={[style.section, (top && {marginTop: Platform.OS === 'android' ? 0 : -15, paddingTop: 10})]}
+                style={[style.section, {backgroundColor: bg}]}
             >
-                <View style={style.avatar}/>
-                <View style={style.sectionMessage}>
-                    <LinearGradient
-                        start={{x: 0.0, y: 1.0}}
-                        end={{x: 1.0, y: 1.0}}
-                        colors={[
-                            changeOpacity('#e5e5e4', GRADIENT_START),
-                            changeOpacity('#d6d6d5', GRADIENT_MIDDLE),
-                            changeOpacity('#e5e5e4', GRADIENT_END)
-                        ]}
-                        locations={[0.1, 0.3, 0.7]}
-                        style={[style.messageText, {width: 106}]}
-                    />
-                    <LinearGradient
-                        start={{x: 0.0, y: 1.0}}
-                        end={{x: 1.0, y: 1.0}}
-                        colors={[
-                            changeOpacity('#e5e5e4', GRADIENT_START),
-                            changeOpacity('#d6d6d5', GRADIENT_MIDDLE),
-                            changeOpacity('#e5e5e4', GRADIENT_END)
-                        ]}
-                        locations={[0.1, 0.3, 0.7]}
-                        style={[style.messageText, {alignSelf: 'stretch'}]}
-                    />
-                    <LinearGradient
-                        start={{x: 0.0, y: 1.0}}
-                        end={{x: 1.0, y: 1.0}}
-                        colors={[
-                            changeOpacity('#e5e5e4', GRADIENT_START),
-                            changeOpacity('#d6d6d5', GRADIENT_MIDDLE),
-                            changeOpacity('#e5e5e4', GRADIENT_END)
-                        ]}
-                        locations={[0.1, 0.3, 0.7]}
-                        style={[style.messageText, {alignSelf: 'stretch'}]}
-                    />
-                </View>
+                <ImageContent
+                    size={32}
+                    animate='fade'
+                    lineNumber={3}
+                    lineSpacing={5}
+                    firstLineWidth='80%'
+                    hasRadius={true}
+                    textSize={14}
+                    color={changeOpacity(color, 0.2)}
+                />
             </View>
         );
     }
 
+    handleChannelSwitch = (channel, currentChannelId) => {
+        if (channel.id === currentChannelId) {
+            this.props.actions.setChannelLoading(false);
+        } else {
+            this.setState({switch: true, channel});
+        }
+    };
+
+    handleLayout = (e) => {
+        const {height} = e.nativeEvent.layout;
+        const maxRows = calculateMaxRows(height);
+        this.setState({maxRows});
+    }
+
     render() {
-        const {channelIsLoading, deviceWidth, theme} = this.props;
+        const {
+            channelIsLoading,
+            style: styleProp,
+            theme,
+        } = this.props;
 
         if (!channelIsLoading) {
             return null;
         }
 
         const style = getStyleSheet(theme);
+        const bg = this.props.backgroundColor || theme.centerChannelBg;
 
         return (
-            <View style={[style.container, {width: deviceWidth}]}>
-                {Array(20).fill().map((item, index) => this.buildSections(index, style, index === 0))}
+            <View
+                style={[style.container, styleProp, {backgroundColor: bg}]}
+                onLayout={this.handleLayout}
+            >
+                {Array(this.state.maxRows).fill().map((item, index) => this.buildSections({
+                    key: index,
+                    style,
+                    bg,
+                    color: theme.centerChannelColor,
+                }))}
             </View>
         );
     }
@@ -88,40 +148,15 @@ export default class ChannelLoader extends PureComponent {
 const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
-            backgroundColor: theme.centerChannelBg,
             flex: 1,
-            position: 'absolute',
-            ...Platform.select({
-                android: {
-                    top: 0
-                },
-                ios: {
-                    top: 15
-                }
-            })
-        },
-        avatar: {
-            backgroundColor: changeOpacity(theme.centerChannelColor, 0.1),
-            borderRadius: 16,
-            height: 32,
-            width: 32
-        },
-        messageText: {
-            backgroundColor: changeOpacity(theme.centerChannelColor, 0.1),
-            height: 10,
-            marginBottom: 10
         },
         section: {
             backgroundColor: theme.centerChannelBg,
             flexDirection: 'row',
+            flex: 1,
             paddingLeft: 12,
             paddingRight: 20,
-            marginVertical: 10
+            marginVertical: 10,
         },
-        sectionMessage: {
-            marginLeft: 12,
-            flex: 1
-        }
     };
 });
-

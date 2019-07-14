@@ -1,17 +1,26 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {getDataRetentionPolicy} from 'mattermost-redux/actions/general';
 import {GeneralTypes} from 'mattermost-redux/action_types';
-import {Client, Client4} from 'mattermost-redux/client';
+import {getSessions} from 'mattermost-redux/actions/users';
+import {autoUpdateTimezone} from 'mattermost-redux/actions/timezone';
+import {Client4} from 'mattermost-redux/client';
+import {getConfig, getLicense} from 'mattermost-redux/selectors/entities/general';
+import {isTimezoneEnabled} from 'mattermost-redux/selectors/entities/timezone';
+import {getCurrentUserId} from 'mattermost-redux/selectors/entities/users';
 
 import {ViewTypes} from 'app/constants';
+import {setAppCredentials} from 'app/init/credentials';
+import PushNotifications from 'app/push_notifications';
+import {getDeviceTimezone} from 'app/utils/timezone';
+import {setCSRFFromCookie} from 'app/utils/security';
 
 export function handleLoginIdChanged(loginId) {
     return async (dispatch, getState) => {
         dispatch({
             type: ViewTypes.LOGIN_ID_CHANGED,
-            loginId
+            loginId,
         }, getState);
     };
 }
@@ -20,31 +29,39 @@ export function handlePasswordChanged(password) {
     return async (dispatch, getState) => {
         dispatch({
             type: ViewTypes.PASSWORD_CHANGED,
-            password
+            password,
         }, getState);
     };
 }
 
 export function handleSuccessfulLogin() {
     return async (dispatch, getState) => {
-        const {config, license} = getState().entities.general;
+        const state = getState();
+        const config = getConfig(state);
+        const license = getLicense(state);
         const token = Client4.getToken();
         const url = Client4.getUrl();
+        const deviceToken = state.entities.general.deviceToken;
+        const currentUserId = getCurrentUserId(state);
+
+        await setCSRFFromCookie(url);
+        setAppCredentials(deviceToken, currentUserId, token, url);
+
+        const enableTimezone = isTimezoneEnabled(state);
+        if (enableTimezone) {
+            dispatch(autoUpdateTimezone(getDeviceTimezone()));
+        }
 
         dispatch({
             type: GeneralTypes.RECEIVED_APP_CREDENTIALS,
             data: {
                 url,
-                token
-            }
-        }, getState);
-
-        Client.setToken(token);
-        Client.setUrl(url);
+            },
+        });
 
         if (config.DataRetentionEnableMessageDeletion && config.DataRetentionEnableMessageDeletion === 'true' &&
             license.IsLicensed === 'true' && license.DataRetention === 'true') {
-            getDataRetentionPolicy()(dispatch, getState);
+            dispatch(getDataRetentionPolicy());
         } else {
             dispatch({type: GeneralTypes.RECEIVED_DATA_RETENTION_POLICY, data: {}});
         }
@@ -53,22 +70,46 @@ export function handleSuccessfulLogin() {
     };
 }
 
-export function getSession() {
-    return async (dispatch, getState) => {
+export function scheduleExpiredNotification(intl) {
+    return (dispatch, getState) => {
         const state = getState();
         const {currentUserId} = state.entities.users;
-        const {credentials} = state.entities.general;
-        const token = credentials && credentials.token;
+        const {deviceToken} = state.entities.general;
+        const message = intl.formatMessage({
+            id: 'mobile.session_expired',
+            defaultMessage: 'Session Expired: Please log in to continue receiving notifications.',
+        });
 
-        if (currentUserId && token) {
-            const session = await Client4.getSessions(currentUserId, token);
-            if (Array.isArray(session) && session[0]) {
-                const s = session[0];
-                return s.expires_at;
+        // Once the user logs in we are going to wait for 10 seconds
+        // before retrieving the session that belongs to this device
+        // to ensure that we get the actual session without issues
+        // then we can schedule the local notification for the session expired
+        setTimeout(async () => {
+            let sessions;
+            try {
+                sessions = await dispatch(getSessions(currentUserId));
+            } catch (e) {
+                console.warn('Failed to get current session', e); // eslint-disable-line no-console
+                return;
             }
-        }
 
-        return false;
+            if (!Array.isArray(sessions.data)) {
+                return;
+            }
+
+            const session = sessions.data.find((s) => s.device_id === deviceToken);
+            const expiresAt = session?.expires_at || 0; //eslint-disable-line camelcase
+
+            if (expiresAt) {
+                PushNotifications.localNotificationSchedule({
+                    date: new Date(expiresAt),
+                    message,
+                    userInfo: {
+                        localNotification: true,
+                    },
+                });
+            }
+        }, 10000);
     };
 }
 
@@ -76,5 +117,5 @@ export default {
     handleLoginIdChanged,
     handlePasswordChanged,
     handleSuccessfulLogin,
-    getSession
+    scheduleExpiredNotification,
 };

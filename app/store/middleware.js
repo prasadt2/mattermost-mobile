@@ -1,22 +1,14 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import DeviceInfo from 'react-native-device-info';
 
-import {ChannelTypes, GeneralTypes, TeamTypes, UserTypes} from 'mattermost-redux/action_types';
-import {General} from 'mattermost-redux/constants';
-import {getTeammateNameDisplaySetting} from 'mattermost-redux/selectors/entities/preferences';
-import {getUserIdFromChannelName, getGroupDisplayNameFromUserIds} from 'mattermost-redux/utils/channel_utils';
-import {displayUsername} from 'mattermost-redux/utils/user_utils';
-
 import {ViewTypes} from 'app/constants';
 import initialState from 'app/initial_state';
-import mattermostBucket from 'app/mattermost_bucket';
-import Config from 'assets/config';
 
 import {
     captureException,
-    LOGGER_JAVASCRIPT_WARNING
+    LOGGER_JAVASCRIPT_WARNING,
 } from 'app/utils/sentry';
 
 export function messageRetention(store) {
@@ -38,7 +30,7 @@ export function messageRetention(store) {
             // and apply data retention on those posts if applies
             let nextAction;
             try {
-                nextAction = cleanupState(action);
+                nextAction = cleanUpState(action);
             } catch (e) {
                 // Sometimes, the payload is incomplete so log the error to Sentry and skip the cleanup
                 console.warn(e); // eslint-disable-line no-console
@@ -48,7 +40,7 @@ export function messageRetention(store) {
 
             return next(nextAction);
         } else if (action.type === ViewTypes.DATA_CLEANUP) {
-            const nextAction = cleanupState(action, true);
+            const nextAction = cleanUpState(action, true);
             return next(nextAction);
         }
 
@@ -70,7 +62,7 @@ function resetStateForNewVersion(action) {
         teams = {
             currentTeamId: payload.entities.teams.currentTeamId,
             teams: payload.entities.teams.teams,
-            myMembers: payload.entities.teams.myMembers
+            myMembers: payload.entities.teams.myMembers,
         };
     }
 
@@ -81,8 +73,8 @@ function resetStateForNewVersion(action) {
             users = {
                 currentUserId,
                 profiles: {
-                    [currentUserId]: payload.entities.users.profiles[currentUserId]
-                }
+                    [currentUserId]: payload.entities.users.profiles[currentUserId],
+                },
             };
         }
     }
@@ -92,10 +84,15 @@ function resetStateForNewVersion(action) {
         preferences = payload.entities.preferences;
     }
 
+    let roles = initialState.entities.roles;
+    if (payload.entities.roles) {
+        roles = payload.entities.roles;
+    }
+
     let search = initialState.entities.search;
     if (payload.entities.search && payload.entities.search.recent) {
         search = {
-            recent: payload.entities.search.recent
+            recent: payload.entities.search.recent,
         };
     }
 
@@ -109,14 +106,23 @@ function resetStateForNewVersion(action) {
         i18n = payload.views.i18n;
     }
 
-    let fetchCache = initialState.views.fetchCache;
-    if (payload.views.fetchCache) {
-        fetchCache = payload.views.fetchCache;
-    }
-
     let lastTeamId = initialState.views.team.lastTeamId;
     if (payload.views.team && payload.views.team.lastTeamId) {
         lastTeamId = payload.views.team.lastTeamId;
+    }
+
+    const currentChannelId = lastChannelForTeam[lastTeamId] && lastChannelForTeam[lastTeamId].length ? lastChannelForTeam[lastTeamId][0] : '';
+    let channels = initialState.entities.channels;
+    if (payload.entities.channels && currentChannelId) {
+        channels = {
+            currentChannelId,
+            channels: {
+                [currentChannelId]: payload.entities.channels.channels[currentChannelId],
+            },
+            myMembers: {
+                [currentChannelId]: payload.entities.channels.myMembers[currentChannelId],
+            },
+        };
     }
 
     let threadDrafts = initialState.views.thread.drafts;
@@ -137,37 +143,45 @@ function resetStateForNewVersion(action) {
     const nextState = {
         app: {
             build: DeviceInfo.getBuildNumber(),
-            version: DeviceInfo.getVersion()
+            version: DeviceInfo.getVersion(),
         },
         entities: {
+            channels,
             general,
             teams,
             users,
             preferences,
-            search
+            search,
+            roles,
         },
         views: {
             channel: {
-                drafts: channelDrafts
+                drafts: channelDrafts,
             },
             i18n,
-            fetchCache,
             team: {
                 lastTeamId,
-                lastChannelForTeam
+                lastChannelForTeam,
             },
             thread: {
-                drafts: threadDrafts
+                drafts: threadDrafts,
+            },
+            root: {
+                hydrationComplete: true,
             },
             selectServer,
-            recentEmojis
-        }
+            recentEmojis,
+        },
+        websocket: {
+            lastConnectAt: payload.websocket?.lastConnectAt,
+            lastDisconnectAt: payload.websocket?.lastDisconnectAt,
+        },
     };
 
     return {
         type: action.type,
         payload: nextState,
-        error: action.error
+        error: action.error,
     };
 }
 
@@ -184,25 +198,26 @@ function getLastChannelForTeam(payload) {
     return lastChannelForTeam;
 }
 
-function cleanupState(action, keepCurrent = false) {
+export function cleanUpState(action, keepCurrent = false) {
     const {payload: resetPayload} = resetStateForNewVersion(action);
     const {payload} = action;
     const {currentChannelId} = payload.entities.channels;
 
     const {lastChannelForTeam} = resetPayload.views.team;
-    const nextEntitites = {
+    const nextEntities = {
         posts: {
             posts: {},
             postsInChannel: {},
+            postsInThread: {},
             reactions: {},
             openGraph: payload.entities.posts.openGraph,
             selectedPostId: payload.entities.posts.selectedPostId,
-            currentFocusedPostId: payload.entities.posts.currentFocusedPostId
+            currentFocusedPostId: payload.entities.posts.currentFocusedPostId,
         },
         files: {
             files: {},
-            fileIdsByPostId: {}
-        }
+            fileIdsByPostId: {},
+        },
     };
 
     let retentionPeriod = 0;
@@ -211,32 +226,27 @@ function cleanupState(action, keepCurrent = false) {
         retentionPeriod = resetPayload.entities.general.dataRetentionPolicy.message_retention_cutoff;
     }
 
-    const postIdsToKeep = Object.values(lastChannelForTeam).reduce((array, channelIds) => {
-        const ids = channelIds.reduce((result, id) => {
-            // we need to check that the channel id is not already included
-            // the reason it can be included is cause at least one of the last channels viewed
-            // in a team can be a DM or GM and the id can be duplicate
-            if (!nextEntitites.posts.postsInChannel[id] && payload.entities.posts.postsInChannel[id]) {
-                let postIds;
-                if (keepCurrent && currentChannelId === id) {
-                    postIds = payload.entities.posts.postsInChannel[id];
-                } else {
-                    postIds = payload.entities.posts.postsInChannel[id].slice(0, 60);
-                }
-                nextEntitites.posts.postsInChannel[id] = postIds;
-                return result.concat(postIds);
-            }
+    const postIdsToKeep = [];
 
-            return result;
-        }, []);
-        return array.concat(ids);
-    }, []);
+    // Keep the last 60 posts in each recently viewed channel
+    nextEntities.posts.postsInChannel = cleanUpPostsInChannel(payload.entities.posts.postsInChannel, lastChannelForTeam, keepCurrent ? currentChannelId : '');
+    postIdsToKeep.push(...getAllFromPostsInChannel(nextEntities.posts.postsInChannel));
 
+    // Keep any posts that appear in search results
     let searchResults = [];
-    if (payload.entities.search && payload.entities.search.results.length) {
-        const {results} = payload.entities.search;
-        searchResults = results;
-        postIdsToKeep.push(...results);
+    let flaggedPosts = [];
+    if (payload.entities.search) {
+        if (payload.entities.search.results?.length) {
+            const {results} = payload.entities.search;
+            searchResults = results;
+            postIdsToKeep.push(...results);
+        }
+
+        if (payload.entities.search.flagged?.length) {
+            const {flagged} = payload.entities.search;
+            flaggedPosts = flagged;
+            postIdsToKeep.push(...flagged);
+        }
     }
 
     postIdsToKeep.forEach((postId) => {
@@ -244,164 +254,174 @@ function cleanupState(action, keepCurrent = false) {
 
         if (post) {
             if (retentionPeriod && post.create_at < retentionPeriod) {
-                const postsInChannel = nextEntitites.posts.postsInChannel[post.channel_id] || [];
-                const index = postsInChannel.indexOf(postId);
-                if (index !== -1) {
-                    postsInChannel.splice(index, 1);
-                }
+                // This post has been removed by data retention, so don't keep it
+                removeFromPostsInChannel(nextEntities.posts.postsInChannel, post.channel_id, postId);
+
                 return;
             }
 
-            nextEntitites.posts.posts[postId] = post;
+            // Keep the post
+            nextEntities.posts.posts[postId] = post;
 
+            // And its reactions
             const reaction = payload.entities.posts.reactions[postId];
             if (reaction) {
-                nextEntitites.posts.reactions[postId] = reaction;
+                nextEntities.posts.reactions[postId] = reaction;
             }
 
+            // And its files
             const fileIds = payload.entities.files.fileIdsByPostId[postId];
             if (fileIds) {
-                nextEntitites.files.fileIdsByPostId[postId] = fileIds;
+                nextEntities.files.fileIdsByPostId[postId] = fileIds;
                 fileIds.forEach((fileId) => {
-                    nextEntitites.files.files[fileId] = payload.entities.files.files[fileId];
+                    nextEntities.files.files[fileId] = payload.entities.files.files[fileId];
                 });
             }
-        } else {
-            // If the post is not in the store we need to remove it from the postsInChannel
-            const channelIds = Object.keys(nextEntitites.posts.postsInChannel);
-            for (let i = 0; i < channelIds.length; i++) {
-                const channelId = channelIds[i];
-                const posts = nextEntitites.posts.postsInChannel[channelId];
-                const index = posts.indexOf(postId);
-                if (index !== -1) {
-                    posts.splice(index, 1);
-                    break;
-                }
+
+            // And its comments
+            const postsInThread = payload.entities.posts.postsInThread[postId];
+            if (postsInThread) {
+                nextEntities.posts.postsInThread[postId] = postsInThread;
             }
         }
     });
 
+    // Remove any pending posts that haven't failed
+    if (payload.entities.posts && payload.entities.posts.pendingPostIds && payload.entities.posts.pendingPostIds.length) {
+        const nextPendingPostIds = [...payload.entities.posts.pendingPostIds];
+        payload.entities.posts.pendingPostIds.forEach((id) => {
+            const posts = nextEntities.posts.posts;
+            const post = posts[id];
+
+            if (post && !post.failed) {
+                Reflect.deleteProperty(posts, id);
+
+                removeFromPostsInChannel(nextEntities.posts.postsInChannel, post.channel_id, id);
+
+                removePendingPost(nextPendingPostIds, id);
+            } else if (!post) {
+                removePendingPost(nextPendingPostIds, id);
+            }
+        });
+
+        nextEntities.posts.pendingPostIds = nextPendingPostIds;
+    }
+
     const nextState = {
         app: resetPayload.app,
         entities: {
-            ...nextEntitites,
+            ...nextEntities,
             channels: payload.entities.channels,
             emojis: payload.entities.emojis,
             general: resetPayload.entities.general,
             preferences: resetPayload.entities.preferences,
             search: {
                 ...resetPayload.entities.search,
-                results: searchResults
+                results: searchResults,
+                flagged: flaggedPosts,
             },
             teams: resetPayload.entities.teams,
-            users: payload.entities.users
+            users: payload.entities.users,
+            roles: resetPayload.entities.roles,
         },
         views: {
+            announcement: payload.views.announcement,
             ...resetPayload.views,
             channel: {
                 ...resetPayload.views.channel,
-                ...payload.views.channel
-            }
-        }
+                ...payload.views.channel,
+            },
+        },
+        websocket: {
+            lastConnectAt: payload.websocket?.lastConnectAt,
+            lastDisconnectAt: payload.websocket?.lastDisconnectAt,
+        },
     };
 
     nextState.errors = payload.errors;
 
     return {
-        type: 'persist/REHYDRATE',
+        type: action.type,
         payload: nextState,
-        error: action.error
+        error: action.error,
     };
 }
 
-export function shareExtensionData(store) {
-    return (next) => (action) => {
-        // allow other middleware to do their things
-        const nextAction = next(action);
+// cleanUpPostsInChannel returns a copy of postsInChannel where only the most recent posts in each channel are kept
+export function cleanUpPostsInChannel(postsInChannel, lastChannelForTeam, currentChannelId, recentPostCount = 60) {
+    const nextPostsInChannel = {};
 
-        switch (action.type) {
-        case 'persist/REHYDRATE': {
-            const {entities} = action.payload;
-            if (entities) {
-                if (entities.general && entities.general.credentials && entities.general.credentials.token) {
-                    mattermostBucket.set('credentials', JSON.stringify(entities.general.credentials), Config.AppGroupId);
-                }
-
-                if (entities.teams) {
-                    const {currentTeamId, teams} = entities.teams;
-                    if (currentTeamId) {
-                        const team = teams[currentTeamId];
-                        const teamToSave = {
-                            id: currentTeamId,
-                            name: team.name,
-                            display_name: team.display_name
-                        };
-                        mattermostBucket.set('selectedTeam', JSON.stringify(teamToSave), Config.AppGroupId);
-                    }
-                }
-
-                if (entities.users) {
-                    const {currentUserId} = entities.users;
-                    if (currentUserId) {
-                        mattermostBucket.set('currentUserId', currentUserId, Config.AppGroupId);
-                    }
-                }
-            }
-            break;
-        }
-        case GeneralTypes.RECEIVED_APP_CREDENTIALS:
-            mattermostBucket.set('credentials', JSON.stringify(action.data), Config.AppGroupId);
-            break;
-        case ChannelTypes.SELECT_CHANNEL: {
-            const state = store.getState();
-            const {channels} = state.entities.channels;
-            const {currentUserId, profiles, profilesInChannel} = state.entities.users;
-            const channel = {...channels[action.data]};
-            if (channel.type === General.DM_CHANNEL) {
-                const teammateId = getUserIdFromChannelName(currentUserId, channel.name);
-                channel.display_name = displayUsername(profiles[teammateId], getTeammateNameDisplaySetting(state));
-            } else if (channel.type === General.GM_CHANNEL) {
-                channel.display_name = getGroupDisplayNameFromUserIds(
-                    profilesInChannel[channel.id],
-                    profiles,
-                    currentUserId,
-                    getTeammateNameDisplaySetting(state)
-                );
+    for (const channelIds of Object.values(lastChannelForTeam)) {
+        for (const channelId of channelIds) {
+            if (nextPostsInChannel[channelId]) {
+                // This is a DM or GM channel that we've already seen on another team
+                continue;
             }
 
-            const channelToSave = {
-                id: channel.id,
-                name: channel.name,
-                display_name: channel.display_name,
-                type: channel.type
-            };
-            mattermostBucket.set('selectedChannel', JSON.stringify(channelToSave), Config.AppGroupId);
-            break;
-        }
-        case 'BATCH_SELECT_TEAM': {
-            const teamData = action.payload.find((data) => data.type === TeamTypes.SELECT_TEAM);
-            if (teamData && teamData.data) {
-                const team = store.getState().entities.teams.teams[teamData.data];
-                const teamToSave = {
-                    id: team.id,
-                    name: team.name,
-                    display_name: team.display_name
-                };
-                mattermostBucket.set('selectedTeam', JSON.stringify(teamToSave), Config.AppGroupId);
+            const postsForChannel = postsInChannel[channelId];
+
+            if (!postsForChannel) {
+                // We don't have anything to keep for this channel
+                continue;
             }
-            break;
+
+            let nextPostsForChannel;
+
+            if (channelId === currentChannelId) {
+                // Keep all of the posts for this channel
+                nextPostsForChannel = postsForChannel;
+            } else {
+                // Only keep the most recent posts for this channel
+                const recentBlock = postsForChannel.find((block) => block.recent);
+
+                if (!recentBlock) {
+                    // We don't have recent posts for this channel
+                    continue;
+                }
+
+                nextPostsForChannel = [{
+                    ...recentBlock,
+                    order: recentBlock.order.slice(0, recentPostCount),
+                }];
+            }
+
+            nextPostsInChannel[channelId] = nextPostsForChannel;
         }
-        case UserTypes.RECEIVED_ME:
-            mattermostBucket.set('currentUserId', action.data.id, Config.AppGroupId);
-            break;
-        case UserTypes.LOGOUT_SUCCESS:
-            mattermostBucket.remove('credentials', Config.AppGroupId);
-            mattermostBucket.remove('selectedChannel', Config.AppGroupId);
-            mattermostBucket.remove('selectedTeam', Config.AppGroupId);
-            mattermostBucket.remove('currentUserId', Config.AppGroupId);
-            mattermostBucket.remove('emm', Config.AppGroupId);
-            break;
+    }
+
+    return nextPostsInChannel;
+}
+
+// getAllFromPostsInChannel returns an array of all post IDs found in postsInChannel
+export function getAllFromPostsInChannel(postsInChannel) {
+    const postIds = [];
+
+    for (const postsForChannel of Object.values(postsInChannel)) {
+        for (const block of postsForChannel) {
+            postIds.push(...block.order);
         }
-        return nextAction;
-    };
+    }
+
+    return postIds;
+}
+
+function removeFromPostsInChannel(postsInChannel, channelId, postId) {
+    const postsForChannel = postsInChannel[channelId];
+
+    if (!postsForChannel) {
+        return;
+    }
+
+    // Since this has already gone through cleanUpPostsInChannel, we know that there can only be one block to look at
+    const index = postsForChannel[0].order.indexOf(postId);
+    if (index !== -1) {
+        postsForChannel[0].order.splice(index, 1);
+    }
+}
+
+function removePendingPost(pendingPostIds, id) {
+    const pendingIndex = pendingPostIds.indexOf(id);
+    if (pendingIndex !== -1) {
+        pendingPostIds.splice(pendingIndex, 1);
+    }
 }

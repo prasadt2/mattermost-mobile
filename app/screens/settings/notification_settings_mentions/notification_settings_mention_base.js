@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -14,7 +14,11 @@ export default class NotificationSettingsMentionsBase extends PureComponent {
         intl: intlShape.isRequired,
         navigator: PropTypes.object,
         onBack: PropTypes.func.isRequired,
-        theme: PropTypes.object.isRequired
+        theme: PropTypes.object.isRequired,
+    };
+
+    static defaultProps = {
+        currentUser: {},
     };
 
     constructor(props) {
@@ -53,37 +57,37 @@ export default class NotificationSettingsMentionsBase extends PureComponent {
         }
 
         const comments = notifyProps.comments || 'any';
+        const mentionKeysString = mentionKeys.join(',');
 
         const newState = {
             ...notifyProps,
             comments,
+            newReplyValue: comments,
             usernameMention: usernameMentionIndex > -1,
-            mention_keys: mentionKeys.join(','),
+            mention_keys: mentionKeysString,
+            androidKeywords: mentionKeysString,
             showKeywordsModal: false,
-            showReplyModal: false
+            showReplyModal: false,
         };
-
-        this.keywords = newState.mention_keys;
-        this.replyValue = comments;
 
         return newState;
     };
 
     toggleFirstNameMention = () => {
         this.setState({
-            first_name: (!(this.state.first_name === 'true')).toString()
+            first_name: (!(this.state.first_name === 'true')).toString(),
         });
     };
 
     toggleUsernameMention = () => {
         this.setState({
-            usernameMention: !this.state.usernameMention
+            usernameMention: !this.state.usernameMention,
         });
     };
 
     toggleChannelMentions = () => {
         this.setState({
-            channel: (!(this.state.channel === 'true')).toString()
+            channel: (!(this.state.channel === 'true')).toString(),
         });
     };
 
@@ -91,14 +95,14 @@ export default class NotificationSettingsMentionsBase extends PureComponent {
         this.goingBack = true;
         this.setState({
             mention_keys: text,
-            showKeywordsModal: false
+            showKeywordsModal: false,
         });
     };
 
     setReplyNotifications = (value) => {
         this.setState({
             comments: value,
-            showReplyModal: false
+            showReplyModal: false,
         });
     };
 
@@ -122,7 +126,7 @@ export default class NotificationSettingsMentionsBase extends PureComponent {
         this.props.onBack({
             ...notifyProps,
             mention_keys: mentionKeys,
-            user_id: this.props.currentUser.id
+            user_id: this.props.currentUser.id,
         });
     };
 }

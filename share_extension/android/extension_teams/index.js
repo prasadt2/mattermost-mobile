@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
@@ -12,7 +12,7 @@ import ExtensionTeams from './extension_teams';
 
 function mapStateToProps(state) {
     return {
-        teamIds: getMySortedTeamIds(state)
+        teamIds: getMySortedTeamIds(state),
     };
 }
 
@@ -20,8 +20,8 @@ function mapDispatchToProps(dispatch) {
     return {
         actions: bindActionCreators({
             extensionSelectTeamId,
-            getTeamChannels
-        }, dispatch)
+            getTeamChannels,
+        }, dispatch),
     };
 }
 

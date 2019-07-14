@@ -1,7 +1,19 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {Alert} from 'react-native';
+import {Posts} from 'mattermost-redux/constants';
+
+export function fromAutoResponder(post) {
+    return Boolean(post.type && (post.type === Posts.SYSTEM_AUTO_RESPONDER));
+}
+
+export function toTitleCase(str) {
+    function doTitleCase(txt) {
+        return txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase();
+    }
+    return str.replace(/\w\S*/g, doTitleCase);
+}
 
 export function alertErrorWithFallback(intl, error, fallback, values) {
     let msg = error.message;
@@ -32,6 +44,28 @@ export function alertErrorIfInvalidPermissions(result) {
     }
 }
 
-export function emptyFunction() {
-    return;
+export function emptyFunction() { // eslint-disable-line no-empty-function
+
+}
+
+export function throttle(fn, limit, ...args) {
+    let inThrottle;
+    let lastFunc;
+    let lastRan;
+
+    return () => {
+        if (inThrottle) {
+            clearTimeout(lastFunc);
+            lastFunc = setTimeout(() => {
+                if ((Date.now() - lastRan) >= limit) {
+                    Reflect.apply(fn, this, args);
+                    lastRan = Date.now();
+                }
+            }, limit - (Date.now() - lastRan));
+        } else {
+            Reflect.apply(fn, this, args);
+            lastRan = Date.now();
+            inThrottle = true;
+        }
+    };
 }

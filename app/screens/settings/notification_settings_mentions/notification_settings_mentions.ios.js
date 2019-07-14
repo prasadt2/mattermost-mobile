@@ -1,11 +1,11 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React from 'react';
 import {
     ScrollView,
     Text,
-    View
+    View,
 } from 'react-native';
 import {injectIntl} from 'react-intl';
 
@@ -14,6 +14,7 @@ import StatusBar from 'app/components/status_bar';
 import Section from 'app/screens/settings/section';
 import SectionItem from 'app/screens/settings/section_item';
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
+import {t} from 'app/utils/i18n';
 
 import NotificationSettingsMentionsBase from './notification_settings_mention_base';
 
@@ -31,12 +32,12 @@ class NotificationSettingsMentionsIos extends NotificationSettingsMentionsBase {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
+                screenBackgroundColor: theme.centerChannelBg,
             },
             passProps: {
                 keywords: this.state.mention_keys,
-                onBack: this.updateMentionKeys
-            }
+                onBack: this.updateMentionKeys,
+            },
         });
     };
 
@@ -57,11 +58,11 @@ class NotificationSettingsMentionsIos extends NotificationSettingsMentionsBase {
 
         return (
             <Section
-                headerId='mobile.notification_settings_mentions.wordsTrigger'
+                headerId={t('mobile.notification_settings_mentions.wordsTrigger')}
                 headerDefaultMessage='WORDS THAT TRIGGER MENTIONS'
                 theme={theme}
             >
-                {currentUser.first_name.length > 0 &&
+                {currentUser.first_name?.length > 0 &&
                 <View>
                     <SectionItem
                         label={(
@@ -140,7 +141,7 @@ class NotificationSettingsMentionsIos extends NotificationSettingsMentionsBase {
 
         return (
             <Section
-                headerId='mobile.account_notifications.reply.header'
+                headerId={t('mobile.account_notifications.reply.header')}
                 headerDefaultMessage='SEND REPLY NOTIFICATIONS FOR'
                 theme={theme}
             >
@@ -213,26 +214,26 @@ const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
+            backgroundColor: theme.centerChannelBg,
         },
         input: {
             color: theme.centerChannelColor,
             fontSize: 12,
-            height: 40
+            height: 40,
         },
         separator: {
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.1),
             flex: 1,
             height: 1,
-            marginLeft: 15
+            marginLeft: 15,
         },
         scrollView: {
             flex: 1,
-            backgroundColor: changeOpacity(theme.centerChannelColor, 0.06)
+            backgroundColor: changeOpacity(theme.centerChannelColor, 0.06),
         },
         scrollViewContent: {
-            paddingVertical: 35
-        }
+            paddingVertical: 35,
+        },
     };
 });
 

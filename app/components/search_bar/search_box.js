@@ -1,6 +1,5 @@
-// Copyright (c) 2017 Crabstudio.
-// Modified work: Copyright (c) 2017 Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
@@ -13,7 +12,7 @@ import {
     TextInput,
     TouchableWithoutFeedback,
     StyleSheet,
-    View
+    View,
 } from 'react-native';
 import EvilIcon from 'react-native-vector-icons/EvilIcons';
 import IonIcon from 'react-native-vector-icons/Ionicons';
@@ -48,7 +47,7 @@ export default class Search extends Component {
         placeholder: PropTypes.string,
         cancelTitle: PropTypes.oneOfType([
             PropTypes.string,
-            PropTypes.object
+            PropTypes.object,
         ]),
         iconDelete: PropTypes.object,
         iconSearch: PropTypes.object,
@@ -75,7 +74,9 @@ export default class Search extends Component {
         shadowOpacityCollapsed: PropTypes.number,
         shadowOpacityExpanded: PropTypes.number,
         shadowRadius: PropTypes.number,
-        shadowVisible: PropTypes.bool
+        shadowVisible: PropTypes.bool,
+        leftComponent: PropTypes.element,
+        inputCollapsedMargin: PropTypes.number,
     };
 
     static defaultProps = {
@@ -97,14 +98,17 @@ export default class Search extends Component {
         shadowOpacityExpanded: 0.24,
         shadowRadius: 4,
         shadowVisible: false,
-        value: ''
+        value: '',
+        leftComponent: null,
+        inputCollapsedMargin: 10,
     };
 
     constructor(props) {
         super(props);
 
         this.state = {
-            expanded: false
+            expanded: false,
+            leftComponentWidth: 0,
         };
         const {width} = Dimensions.get('window');
         this.contentWidth = width;
@@ -112,6 +116,8 @@ export default class Search extends Component {
 
         this.iconSearchAnimated = new Animated.Value(this.props.searchIconCollapsedMargin);
         this.iconDeleteAnimated = new Animated.Value(0);
+        this.leftComponentAnimated = new Animated.Value(0);
+        this.inputFocusAnimated = new Animated.Value(0);
         this.inputFocusWidthAnimated = new Animated.Value(this.contentWidth - 10);
         this.inputFocusPlaceholderAnimated = new Animated.Value(this.props.placeholderCollapsedMargin);
         this.btnCancelAnimated = new Animated.Value(this.contentWidth);
@@ -162,6 +168,11 @@ export default class Search extends Component {
         }
     };
 
+    onLeftComponentLayout = (event) => {
+        const leftComponentWidth = event.nativeEvent.layout.width;
+        this.setState({leftComponentWidth});
+    };
+
     onSearch = async () => {
         if (this.props.keyboardShouldPersist === false) {
             await Keyboard.dismiss();
@@ -177,7 +188,8 @@ export default class Search extends Component {
             this.iconDeleteAnimated,
             {
                 toValue: (text.length > 0) ? 1 : 0,
-                duration: 200
+                duration: 200,
+                useNativeDriver: true,
             }
         ).start();
 
@@ -202,7 +214,8 @@ export default class Search extends Component {
             this.iconDeleteAnimated,
             {
                 toValue: 0,
-                duration: 200
+                duration: 200,
+                useNativeDriver: true,
             }
         ).start();
         this.focus();
@@ -232,45 +245,61 @@ export default class Search extends Component {
                     this.inputFocusWidthAnimated,
                     {
                         toValue: this.contentWidth - 70,
-                        duration: 200
+                        duration: 200,
                     }
-                ).start(),
+                ),
+                Animated.timing(
+                    this.inputFocusAnimated,
+                    {
+                        toValue: this.state.leftComponentWidth,
+                        duration: 200,
+                    }
+                ),
+                Animated.timing(
+                    this.leftComponentAnimated,
+                    {
+                        toValue: this.contentWidth,
+                        duration: 200,
+                    }
+                ),
                 Animated.timing(
                     this.btnCancelAnimated,
                     {
-                        toValue: 10,
-                        duration: 200
+                        toValue: this.state.leftComponentWidth ? 15 - this.state.leftComponentWidth : 10,
+                        duration: 200,
                     }
-                ).start(),
+                ),
                 Animated.timing(
                     this.inputFocusPlaceholderAnimated,
                     {
                         toValue: this.props.placeholderExpandedMargin,
-                        duration: 200
+                        duration: 200,
                     }
-                ).start(),
+                ),
                 Animated.timing(
                     this.iconSearchAnimated,
                     {
                         toValue: this.props.searchIconExpandedMargin,
-                        duration: 200
+                        duration: 200,
                     }
-                ).start(),
+                ),
                 Animated.timing(
                     this.iconDeleteAnimated,
                     {
                         toValue: (this.props.value.length > 0) ? 1 : 0,
-                        duration: 200
+                        duration: 200,
+                        useNativeDriver: true,
                     }
-                ).start(),
+                ),
                 Animated.timing(
                     this.shadowOpacityAnimated,
                     {
                         toValue: this.props.shadowOpacityExpanded,
-                        duration: 200
+                        duration: 200,
+                        useNativeDriver: true,
                     }
-                ).start()
-            ]);
+                ),
+            ]).start();
             this.shadowHeight = this.props.shadowOffsetHeightExpanded;
             resolve();
         });
@@ -283,108 +312,137 @@ export default class Search extends Component {
                 Animated.timing(
                     this.inputFocusWidthAnimated,
                     {
-                        toValue: this.contentWidth - 10,
-                        duration: 200
+                        toValue: this.contentWidth - this.state.leftComponentWidth - this.props.inputCollapsedMargin,
+                        duration: 200,
                     }
-                ).start(),
+                ),
+                Animated.timing(
+                    this.inputFocusAnimated,
+                    {
+                        toValue: 0,
+                        duration: 200,
+                    }
+                ),
+                Animated.timing(
+                    this.leftComponentAnimated,
+                    {
+                        toValue: 0,
+                        duration: 200,
+                    }
+                ),
                 Animated.timing(
                     this.btnCancelAnimated,
                     {
                         toValue: this.contentWidth,
-                        duration: 200
+                        duration: 200,
                     }
-                ).start(),
+                ),
                 ((this.props.keyboardShouldPersist === false) ?
                     Animated.timing(
                         this.inputFocusPlaceholderAnimated,
                         {
                             toValue: this.props.placeholderCollapsedMargin,
-                            duration: 200
+                            duration: 200,
                         }
-                    ).start() : null),
+                    ) : null),
                 ((this.props.keyboardShouldPersist === false || isForceAnim === true) ?
                     Animated.timing(
                         this.iconSearchAnimated,
                         {
-                            toValue: this.props.searchIconCollapsedMargin,
-                            duration: 200
+                            toValue: (this.props.searchIconCollapsedMargin + this.state.leftComponentWidth),
+                            duration: 200,
                         }
-                    ).start() : null),
+                    ) : null),
                 Animated.timing(
                     this.iconDeleteAnimated,
                     {
                         toValue: 0,
-                        duration: 200
+                        duration: 200,
+                        useNativeDriver: true,
                     }
-                ).start(),
+                ),
                 Animated.timing(
                     this.shadowOpacityAnimated,
                     {
                         toValue: this.props.shadowOpacityCollapsed,
-                        duration: 200
+                        duration: 200,
+                        useNativeDriver: true,
                     }
-                ).start()
-            ]);
+                ),
+            ]).start();
             this.shadowHeight = this.props.shadowOffsetHeightCollapsed;
             resolve();
         });
     };
 
     render() {
+        const {backgroundColor, ...restOfInputPropStyles} = this.props.inputStyle;
+
         return (
             <Animated.View
                 ref='searchContainer'
                 style={[
                     styles.container,
-                    this.props.backgroundColor && {backgroundColor: this.props.backgroundColor}
+                    this.props.backgroundColor && {backgroundColor: this.props.backgroundColor},
+                    this.state.leftComponentWidth && {padding: 0},
                 ]}
                 onLayout={this.onLayout}
             >
-                <AnimatedTextInput
-                    ref='input_keyword'
-                    style={[
-                        styles.input,
-                        this.props.placeholderTextColor && {color: this.props.placeholderTextColor},
-                        this.props.inputStyle && this.props.inputStyle,
-                        this.props.inputHeight && {height: this.props.inputHeight},
-                        this.props.inputBorderRadius && {borderRadius: this.props.inputBorderRadius},
-                        {
-                            width: this.inputFocusWidthAnimated,
-                            paddingLeft: this.inputFocusPlaceholderAnimated
-                        },
-                        this.props.shadowVisible && {
-                            shadowOffset: {width: this.props.shadowOffsetWidth, height: this.shadowHeight},
-                            shadowColor: this.props.shadowColor,
-                            shadowOpacity: this.shadowOpacityAnimated,
-                            shadowRadius: this.props.shadowRadius
-                        }
-
-                    ]}
-                    autoFocus={this.props.autoFocus}
-                    editable={this.props.editable}
-                    value={this.props.value}
-                    onChangeText={this.onChangeText}
-                    placeholder={this.placeholder}
-                    placeholderTextColor={this.props.placeholderTextColor}
-                    selectionColor={this.props.selectionColor}
-                    onSubmitEditing={this.onSearch}
-                    onSelectionChange={this.onSelectionChange}
-                    autoCorrect={false}
-                    blurOnSubmit={this.props.blurOnSubmit}
-                    returnKeyType={this.props.returnKeyType || 'search'}
-                    keyboardType={this.props.keyboardType || 'default'}
-                    autoCapitalize={this.props.autoCapitalize}
-                    onBlur={this.onBlur}
-                    onFocus={this.onFocus}
-                    underlineColorAndroid='transparent'
-                    enablesReturnKeyAutomatically={true}
-                />
+                {((this.props.leftComponent) ?
+                    <Animated.View
+                        style={{right: this.leftComponentAnimated}}
+                        onLayout={this.onLeftComponentLayout}
+                    >
+                        {this.props.leftComponent}
+                    </Animated.View> :
+                    null
+                )}
+                <Animated.View style={{backgroundColor, right: this.inputFocusAnimated, borderRadius: 2}}>
+                    <AnimatedTextInput
+                        ref='input_keyword'
+                        style={[
+                            styles.input,
+                            this.props.placeholderTextColor && {color: this.props.placeholderTextColor},
+                            this.props.inputHeight && {height: this.props.inputHeight},
+                            this.props.inputBorderRadius && {borderRadius: this.props.inputBorderRadius},
+                            {
+                                width: this.inputFocusWidthAnimated,
+                                paddingLeft: this.inputFocusPlaceholderAnimated,
+                            },
+                            restOfInputPropStyles,
+                            this.props.shadowVisible && {
+                                shadowOffset: {width: this.props.shadowOffsetWidth, height: this.shadowHeight},
+                                shadowColor: this.props.shadowColor,
+                                shadowOpacity: this.shadowOpacityAnimated,
+                                shadowRadius: this.props.shadowRadius,
+                            },
+                        ]}
+                        autoFocus={this.props.autoFocus}
+                        editable={this.props.editable}
+                        value={this.props.value}
+                        onChangeText={this.onChangeText}
+                        placeholder={this.placeholder}
+                        placeholderTextColor={this.props.placeholderTextColor}
+                        selectionColor={this.props.selectionColor}
+                        onSubmitEditing={this.onSearch}
+                        onSelectionChange={this.onSelectionChange}
+                        autoCorrect={false}
+                        blurOnSubmit={this.props.blurOnSubmit}
+                        returnKeyType={this.props.returnKeyType || 'search'}
+                        keyboardType={this.props.keyboardType || 'default'}
+                        autoCapitalize={this.props.autoCapitalize}
+                        onBlur={this.onBlur}
+                        onFocus={this.onFocus}
+                        underlineColorAndroid='transparent'
+                        enablesReturnKeyAutomatically={true}
+                    />
+                </Animated.View>
                 <TouchableWithoutFeedback onPress={this.onFocus}>
                     {((this.props.iconSearch) ?
                         <Animated.View
                             style={[
                                 styles.iconSearch,
-                                {left: this.iconSearchAnimated}
+                                {left: this.iconSearchAnimated},
                             ]}
                         >
                             {this.props.iconSearch}
@@ -398,8 +456,8 @@ export default class Search extends Component {
                                 this.props.tintColorSearch && {color: this.props.tintColorSearch},
                                 {
                                     left: this.iconSearchAnimated,
-                                    top: middleHeight - 10
-                                }
+                                    top: middleHeight - 10,
+                                },
                             ]}
                         />
                     )}
@@ -410,7 +468,7 @@ export default class Search extends Component {
                             style={[
                                 styles.iconDelete,
                                 this.props.positionRightDelete && {right: this.props.positionRightDelete},
-                                {opacity: this.iconDeleteAnimated}
+                                {opacity: this.iconDeleteAnimated},
                             ]}
                         >
                             {this.props.iconDelete}
@@ -424,8 +482,8 @@ export default class Search extends Component {
                                     this.props.tintColorDelete && {color: this.props.tintColorDelete},
                                     this.props.positionRightDelete && {right: this.props.positionRightDelete},
                                     {
-                                        opacity: this.iconDeleteAnimated
-                                    }
+                                        opacity: this.iconDeleteAnimated,
+                                    },
                                 ]}
                             />
                         </View>
@@ -436,14 +494,14 @@ export default class Search extends Component {
                         style={[
                             styles.cancelButton,
                             this.props.cancelButtonStyle && this.props.cancelButtonStyle,
-                            {left: this.btnCancelAnimated}
+                            {left: this.btnCancelAnimated},
                         ]}
                     >
                         <Text
                             style={[
                                 styles.cancelButtonText,
                                 this.props.titleCancelColor && {color: this.props.titleCancelColor},
-                                this.props.cancelButtonStyle && this.props.cancelButtonStyle
+                                this.props.cancelButtonStyle && this.props.cancelButtonStyle,
                             ]}
                         >
                             {this.cancelTitle}
@@ -462,7 +520,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'flex-start',
         alignItems: 'center',
-        padding: 5
+        padding: 5,
     },
     input: {
         height: containerHeight - 10,
@@ -470,16 +528,15 @@ const styles = StyleSheet.create({
         paddingBottom: 5,
         paddingRight: 32,
         borderColor: '#444',
-        backgroundColor: '#f7f7f7',
         borderRadius: 5,
-        fontSize: 15
+        fontSize: 15,
     },
     iconSearch: {
         flex: 1,
-        position: 'absolute'
+        position: 'absolute',
     },
     iconSearchDefault: {
-        color: 'grey'
+        color: 'grey',
     },
     iconDelete: {
         alignItems: 'flex-start',
@@ -488,21 +545,20 @@ const styles = StyleSheet.create({
         paddingLeft: 1,
         paddingTop: 3,
         right: 65,
-        width: 25
+        width: 25,
     },
     iconDeleteDefault: {
-        color: 'grey'
+        color: 'grey',
     },
     cancelButton: {
         justifyContent: 'center',
         alignItems: 'flex-start',
         backgroundColor: 'transparent',
         width: 60,
-        height: 50
+        height: 50,
     },
     cancelButtonText: {
         fontSize: 14,
-        color: '#fff'
-    }
+        color: '#fff',
+    },
 });
-

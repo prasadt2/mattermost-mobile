@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -9,22 +9,23 @@ import AppIcon from 'app/components/app_icon';
 import ProfilePicture from 'app/components/profile_picture';
 import {emptyFunction} from 'app/utils/general';
 import webhookIcon from 'assets/images/icons/webhook.jpg';
-
-const PROFILE_PICTURE_SIZE = 32;
+import {ViewTypes} from 'app/constants';
 
 export default class PostProfilePicture extends PureComponent {
     static propTypes = {
         enablePostIconOverride: PropTypes.bool,
         fromWebHook: PropTypes.bool,
         isSystemMessage: PropTypes.bool,
+        fromAutoResponder: PropTypes.bool,
         overrideIconUrl: PropTypes.string,
         onViewUserProfile: PropTypes.func,
         theme: PropTypes.object,
-        userId: PropTypes.string
+        userId: PropTypes.string,
+        isBot: PropTypes.bool,
     };
 
     static defaultProps = {
-        onViewUserProfile: emptyFunction
+        onViewUserProfile: emptyFunction,
     };
 
     render() {
@@ -32,19 +33,21 @@ export default class PostProfilePicture extends PureComponent {
             enablePostIconOverride,
             fromWebHook,
             isSystemMessage,
+            fromAutoResponder,
             onViewUserProfile,
             overrideIconUrl,
             theme,
-            userId
+            userId,
+            isBot,
         } = this.props;
 
-        if (isSystemMessage) {
+        if (isSystemMessage && !fromAutoResponder && !isBot) {
             return (
                 <View>
                     <AppIcon
                         color={theme.centerChannelColor}
-                        height={PROFILE_PICTURE_SIZE}
-                        width={PROFILE_PICTURE_SIZE}
+                        height={ViewTypes.PROFILE_PICTURE_SIZE}
+                        width={ViewTypes.PROFILE_PICTURE_SIZE}
                     />
                 </View>
             );
@@ -58,19 +61,21 @@ export default class PostProfilePicture extends PureComponent {
                     <Image
                         source={icon}
                         style={{
-                            height: PROFILE_PICTURE_SIZE,
-                            width: PROFILE_PICTURE_SIZE,
-                            borderRadius: PROFILE_PICTURE_SIZE / 2
+                            height: ViewTypes.PROFILE_PICTURE_SIZE,
+                            width: ViewTypes.PROFILE_PICTURE_SIZE,
+                            borderRadius: ViewTypes.PROFILE_PICTURE_SIZE / 2,
                         }}
                     />
                 </View>
             );
         }
 
+        const showProfileStatus = !fromAutoResponder;
         let component = (
             <ProfilePicture
                 userId={userId}
-                size={PROFILE_PICTURE_SIZE}
+                size={ViewTypes.PROFILE_PICTURE_SIZE}
+                showStatus={showProfileStatus}
             />
         );
 

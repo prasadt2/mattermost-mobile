@@ -1,5 +1,5 @@
-// Copyright (c) 2018-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -9,7 +9,7 @@ import {
     ActivityIndicator,
     SectionList,
     Text,
-    View
+    View,
 } from 'react-native';
 
 import {Preferences} from 'mattermost-redux/constants';
@@ -17,7 +17,7 @@ import {Preferences} from 'mattermost-redux/constants';
 import SearchBar from 'app/components/search_bar';
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
 
-import ExtensionChannelItem from 'share_extension/common/extension_channel_item';
+import ExtensionChannelItem from './extension_channel_item';
 
 const defaultTheme = Preferences.THEMES.default;
 
@@ -26,25 +26,25 @@ export default class ExtensionTeam extends PureComponent {
         directChannels: PropTypes.array,
         navigation: PropTypes.object.isRequired,
         privateChannels: PropTypes.array,
-        publicChannels: PropTypes.array
+        publicChannels: PropTypes.array,
     };
 
     static defaultProps = {
         directChannels: [],
         privateChannels: [],
-        publicChannels: []
+        publicChannels: [],
     };
 
     static contextTypes = {
-        intl: intlShape
+        intl: intlShape,
     };
 
     static navigationOptions = ({navigation}) => ({
-        title: navigation.state.params.title
+        title: navigation.state.params.title,
     });
 
     state = {
-        sections: null
+        sections: null,
     };
 
     componentWillMount() {
@@ -56,8 +56,12 @@ export default class ExtensionTeam extends PureComponent {
         let {
             directChannels: directFiltered,
             privateChannels: privateFiletered,
-            publicChannels: publicFiltered
+            publicChannels: publicFiltered,
         } = this.props;
+
+        directFiltered = directFiltered.filter((c) => c.delete_at === 0);
+        privateFiletered = privateFiletered.filter((c) => c.delete_at === 0);
+        publicFiltered = publicFiltered.filter((c) => c.delete_at === 0);
 
         if (term) {
             directFiltered = directFiltered.filter((c) => c.display_name.toLowerCase().includes(term.toLowerCase()));
@@ -69,7 +73,7 @@ export default class ExtensionTeam extends PureComponent {
             sections.push({
                 id: 'sidebar.channels',
                 defaultMessage: 'PUBLIC CHANNELS',
-                data: publicFiltered
+                data: publicFiltered,
             });
         }
 
@@ -77,7 +81,7 @@ export default class ExtensionTeam extends PureComponent {
             sections.push({
                 id: 'sidebar.pg',
                 defaultMessage: 'PRIVATE CHANNELS',
-                data: privateFiletered
+                data: privateFiletered,
             });
         }
 
@@ -85,7 +89,7 @@ export default class ExtensionTeam extends PureComponent {
             sections.push({
                 id: 'sidebar.direct',
                 defaultMessage: 'DIRECT MESSAGES',
-                data: directFiltered
+                data: directFiltered,
             });
         }
 
@@ -129,21 +133,24 @@ export default class ExtensionTeam extends PureComponent {
         }
 
         return (
-            <SectionList
-                sections={sections}
-                ListHeaderComponent={this.renderSearchBar(styles)}
-                ItemSeparatorComponent={this.renderItemSeparator}
-                renderItem={this.renderItem}
-                renderSectionHeader={this.renderSectionHeader}
-                keyExtractor={this.keyExtractor}
-                keyboardShouldPersistTaps='always'
-                keyboardDismissMode='on-drag'
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                stickySectionHeadersEnabled={true}
-                scrollEventThrottle={100}
-                windowSize={5}
-            />
+            <React.Fragment>
+                {this.renderSearchBar(styles)}
+                <SectionList
+                    style={styles.flex}
+                    sections={sections}
+                    ItemSeparatorComponent={this.renderItemSeparator}
+                    renderItem={this.renderItem}
+                    renderSectionHeader={this.renderSectionHeader}
+                    keyExtractor={this.keyExtractor}
+                    keyboardShouldPersistTaps='always'
+                    keyboardDismissMode='on-drag'
+                    initialNumToRender={10}
+                    maxToRenderPerBatch={10}
+                    stickySectionHeadersEnabled={true}
+                    scrollEventThrottle={100}
+                    windowSize={5}
+                />
+            </React.Fragment>
         );
     };
 
@@ -187,6 +194,7 @@ export default class ExtensionTeam extends PureComponent {
                     tintColorDelete={changeOpacity(defaultTheme.centerChannelColor, 0.3)}
                     titleCancelColor={defaultTheme.centerChannelColor}
                     onChangeText={this.handleSearch}
+                    autoCapitalize='none'
                     value={this.state.term}
                 />
             </View>
@@ -198,7 +206,7 @@ export default class ExtensionTeam extends PureComponent {
         const styles = getStyleSheet(defaultTheme);
         const {
             defaultMessage,
-            id
+            id,
         } = section;
 
         return (
@@ -226,44 +234,44 @@ export default class ExtensionTeam extends PureComponent {
 const getStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         flex: {
-            flex: 1
+            flex: 1,
         },
         separator: {
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.2),
-            height: 1
+            height: 1,
         },
         loadingContainer: {
             alignItems: 'center',
             flex: 1,
-            justifyContent: 'center'
+            justifyContent: 'center',
         },
         searchContainer: {
-            paddingBottom: 2
+            paddingBottom: 2,
         },
         searchBarInput: {
             backgroundColor: '#fff',
             color: theme.centerChannelColor,
-            fontSize: 15
+            fontSize: 15,
         },
         titleContainer: {
-            height: 30
+            height: 30,
         },
         title: {
             color: theme.centerChannelColor,
             fontSize: 15,
             height: 30,
             textAlignVertical: 'center',
-            paddingHorizontal: 15
+            paddingHorizontal: 15,
         },
         errorContainer: {
             alignItems: 'center',
             flex: 1,
             justifyContent: 'center',
-            paddingHorizontal: 15
+            paddingHorizontal: 15,
         },
         error: {
             color: theme.errorTextColor,
-            fontSize: 14
-        }
+            fontSize: 14,
+        },
     };
 });

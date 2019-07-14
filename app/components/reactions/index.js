@@ -1,13 +1,17 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {connect} from 'react-redux';
 import {bindActionCreators} from 'redux';
 
 import {getReactionsForPost, removeReaction} from 'mattermost-redux/actions/posts';
-import {makeGetReactionsForPost} from 'mattermost-redux/selectors/entities/posts';
+import {makeGetReactionsForPost, getPost} from 'mattermost-redux/selectors/entities/posts';
+import {haveIChannelPermission} from 'mattermost-redux/selectors/entities/roles';
+import {hasNewPermissions} from 'mattermost-redux/selectors/entities/general';
+import Permissions from 'mattermost-redux/constants/permissions';
 import {getCurrentUserId} from 'mattermost-redux/selectors/entities/users';
 import {getTheme} from 'mattermost-redux/selectors/entities/preferences';
+import {getChannel} from 'mattermost-redux/selectors/entities/channels';
 
 import {addReaction} from 'app/actions/views/emoji';
 
@@ -16,28 +20,39 @@ import Reactions from './reactions';
 function makeMapStateToProps() {
     const getReactionsForPostSelector = makeGetReactionsForPost();
     return function mapStateToProps(state, ownProps) {
+        const post = getPost(state, ownProps.postId);
+        const channelId = post ? post.channel_id : '';
+        const channel = getChannel(state, channelId) || {};
+        const teamId = channel.team_id;
+        const channelIsArchived = channel.delete_at !== 0;
+
+        let canAddReaction = true;
+        let canRemoveReaction = true;
+        if (channelIsArchived) {
+            canAddReaction = false;
+            canRemoveReaction = false;
+        } else if (hasNewPermissions(state)) {
+            canAddReaction = haveIChannelPermission(state, {
+                team: teamId,
+                channel: channelId,
+                permission: Permissions.ADD_REACTION,
+            });
+            canRemoveReaction = haveIChannelPermission(state, {
+                team: teamId,
+                channel: channelId,
+                permission: Permissions.REMOVE_REACTION,
+            });
+        }
+
         const currentUserId = getCurrentUserId(state);
-        const reactionsForPost = getReactionsForPostSelector(state, ownProps.postId);
-
-        const highlightedReactions = [];
-        const reactionsByName = reactionsForPost.reduce((reactions, reaction) => {
-            if (reactions.has(reaction.emoji_name)) {
-                reactions.get(reaction.emoji_name).push(reaction);
-            } else {
-                reactions.set(reaction.emoji_name, [reaction]);
-            }
-
-            if (reaction.user_id === currentUserId) {
-                highlightedReactions.push(reaction.emoji_name);
-            }
-
-            return reactions;
-        }, new Map());
+        const reactions = getReactionsForPostSelector(state, ownProps.postId);
 
         return {
-            highlightedReactions,
-            reactions: reactionsByName,
-            theme: getTheme(state)
+            currentUserId,
+            reactions,
+            theme: getTheme(state),
+            canAddReaction,
+            canRemoveReaction,
         };
     };
 }
@@ -47,8 +62,8 @@ function mapDispatchToProps(dispatch) {
         actions: bindActionCreators({
             addReaction,
             getReactionsForPost,
-            removeReaction
-        }, dispatch)
+            removeReaction,
+        }, dispatch),
     };
 }
 

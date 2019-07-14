@@ -1,13 +1,14 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {createSelector} from 'reselect';
 
 import {General} from 'mattermost-redux/constants';
+import {getConfig} from 'mattermost-redux/selectors/entities/general';
 import {getMyChannels, getOtherChannels} from 'mattermost-redux/selectors/entities/channels';
 import {
     getCurrentUser, getCurrentUserId, getProfilesInCurrentChannel,
-    getProfilesNotInCurrentChannel, getProfilesInCurrentTeam
+    getProfilesNotInCurrentChannel, getProfilesInCurrentTeam,
 } from 'mattermost-redux/selectors/entities/users';
 import {sortChannelsByDisplayName} from 'mattermost-redux/utils/channel_utils';
 import {sortByUsername} from 'mattermost-redux/utils/user_utils';
@@ -26,7 +27,7 @@ export const getMatchTermForAtMention = (() => {
             lastValue = value;
             lastIsSearch = isSearch;
             if (match) {
-                lastMatchTerm = isSearch ? match[1] : match[2];
+                lastMatchTerm = (isSearch ? match[1] : match[2]).toLowerCase();
             } else {
                 lastMatchTerm = null;
             }
@@ -46,7 +47,13 @@ export const getMatchTermForChannelMention = (() => {
             lastValue = value;
             lastIsSearch = isSearch;
             if (match) {
-                lastMatchTerm = isSearch ? match[1] : match[2];
+                if (isSearch) {
+                    lastMatchTerm = match[1];
+                } else if (match.index > 0 && value[match.index - 1] === '~') {
+                    lastMatchTerm = null;
+                } else {
+                    lastMatchTerm = match[2];
+                }
             } else {
                 lastMatchTerm = null;
             }
@@ -178,7 +185,8 @@ export const filterPublicChannels = createSelector(
     getOtherChannels,
     getCurrentLocale,
     (state, matchTerm) => matchTerm,
-    (myChannels, otherChannels, locale, matchTerm) => {
+    getConfig,
+    (myChannels, otherChannels, locale, matchTerm, config) => {
         if (matchTerm === null) {
             return null;
         }
@@ -193,8 +201,13 @@ export const filterPublicChannels = createSelector(
             );
         } else {
             channels = myChannels.filter((c) => {
-                return (c.type === General.OPEN_CHANNEL || c.type === General.PRIVATE_CHANNEL);
+                return (c.type === General.OPEN_CHANNEL);
             }).concat(otherChannels);
+        }
+
+        const viewArchivedChannels = config.ExperimentalViewArchivedChannels === 'true';
+        if (!viewArchivedChannels) {
+            channels = channels.filter((c) => c.delete_at === 0);
         }
 
         return channels.sort(sortChannelsByDisplayName.bind(null, locale)).map((c) => c.id);
@@ -204,7 +217,8 @@ export const filterPublicChannels = createSelector(
 export const filterPrivateChannels = createSelector(
     getMyChannels,
     (state, matchTerm) => matchTerm,
-    (myChannels, matchTerm) => {
+    getConfig,
+    (myChannels, matchTerm, config) => {
         if (matchTerm === null) {
             return null;
         }
@@ -221,6 +235,59 @@ export const filterPrivateChannels = createSelector(
             });
         }
 
+        const viewArchivedChannels = config.ExperimentalViewArchivedChannels === 'true';
+        if (!viewArchivedChannels) {
+            channels = channels.filter((c) => c.delete_at === 0);
+        }
+
         return channels.map((c) => c.id);
     }
 );
+
+export const filterDirectAndGroupMessages = createSelector(
+    getMyChannels,
+    (state) => state.entities.channels.channels,
+    (state, matchTerm) => matchTerm,
+    (myChannels, originalChannels, matchTerm) => {
+        if (matchTerm === null) {
+            return null;
+        }
+
+        let channels;
+        if (matchTerm) {
+            channels = myChannels.filter((c) => {
+                if (c.type === General.DM_CHANNEL && (originalChannels[c.id].display_name.startsWith(matchTerm))) {
+                    return true;
+                }
+                if (c.type === General.GM_CHANNEL && (c.name.startsWith(matchTerm) || c.display_name.replace(/ /g, '').startsWith(matchTerm))) {
+                    return true;
+                }
+                return false;
+            });
+        } else {
+            channels = myChannels.filter((c) => {
+                return c.type === General.DM_CHANNEL || c.type === General.GM_CHANNEL;
+            });
+        }
+
+        return channels.map((c) => c.id);
+    }
+);
+
+export const makeGetMatchTermForDateMention = () => {
+    let lastMatchTerm = null;
+    let lastValue;
+    return (value) => {
+        if (value !== lastValue) {
+            const regex = Autocomplete.DATE_MENTION_SEARCH_REGEX;
+            const match = value.match(regex);
+            lastValue = value;
+            if (match) {
+                lastMatchTerm = match[1];
+            } else {
+                lastMatchTerm = null;
+            }
+        }
+        return lastMatchTerm;
+    };
+};

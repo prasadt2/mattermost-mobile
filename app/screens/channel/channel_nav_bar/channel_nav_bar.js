@@ -1,12 +1,12 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {Platform, View} from 'react-native';
-import DeviceInfo from 'react-native-device-info';
+import {Dimensions, Platform, View} from 'react-native';
 
-import {ViewTypes} from 'app/constants';
+import {DeviceTypes, ViewTypes} from 'app/constants';
+import mattermostManaged from 'app/mattermost_managed';
 import {makeStyleSheetFromTheme} from 'app/utils/theme';
 
 import ChannelDrawerButton from './channel_drawer_button';
@@ -19,7 +19,7 @@ const {
     ANDROID_TOP_PORTRAIT,
     IOS_TOP_LANDSCAPE,
     IOS_TOP_PORTRAIT,
-    STATUS_BAR_HEIGHT
+    STATUS_BAR_HEIGHT,
 } = ViewTypes;
 
 export default class ChannelNavBar extends PureComponent {
@@ -29,14 +29,32 @@ export default class ChannelNavBar extends PureComponent {
         openChannelDrawer: PropTypes.func.isRequired,
         openSettingsDrawer: PropTypes.func.isRequired,
         onPress: PropTypes.func.isRequired,
-        theme: PropTypes.object.isRequired
+        theme: PropTypes.object.isRequired,
     };
 
-    constructor(props) {
-        super(props);
+    state = {
+        isSplitView: false,
+    };
 
-        this.isX = DeviceInfo.getModel() === 'iPhone X';
+    componentDidMount() {
+        this.mounted = true;
+        this.handleDimensions();
+        Dimensions.addEventListener('change', this.handleDimensions);
     }
+
+    componentWillUnmount() {
+        this.mounted = false;
+        Dimensions.removeEventListener('change', this.handleDimensions);
+    }
+
+    handleDimensions = () => {
+        if (DeviceTypes.IS_TABLET && this.mounted) {
+            mattermostManaged.isRunningInSplitView().then((result) => {
+                const isSplitView = Boolean(result.isSplitView);
+                this.setState({isSplitView});
+            });
+        }
+    };
 
     render() {
         const {isLandscape, navigator, onPress, theme} = this.props;
@@ -48,25 +66,35 @@ export default class ChannelNavBar extends PureComponent {
         switch (Platform.OS) {
         case 'android':
             height = ANDROID_TOP_PORTRAIT;
-            if (isLandscape) {
+            if (DeviceTypes.IS_TABLET) {
                 height = ANDROID_TOP_LANDSCAPE;
             }
             break;
         case 'ios':
             height = IOS_TOP_PORTRAIT - STATUS_BAR_HEIGHT;
-            if (isLandscape) {
+            if (DeviceTypes.IS_TABLET && isLandscape) {
+                height -= 1;
+            } else if (isLandscape) {
                 height = IOS_TOP_LANDSCAPE;
             }
 
-            if (this.isX && isLandscape) {
+            if (DeviceTypes.IS_IPHONE_X && isLandscape) {
                 padding.paddingHorizontal = 10;
             }
             break;
         }
 
+        let drawerButtonVisible = false;
+        if (!DeviceTypes.IS_TABLET || this.state.isSplitView) {
+            drawerButtonVisible = true;
+        }
+
         return (
             <View style={[style.header, padding, {height}]}>
-                <ChannelDrawerButton openDrawer={openChannelDrawer}/>
+                <ChannelDrawerButton
+                    openDrawer={openChannelDrawer}
+                    visible={drawerButtonVisible}
+                />
                 <ChannelTitle onPress={onPress}/>
                 <ChannelSearchButton
                     navigator={navigator}
@@ -85,7 +113,7 @@ const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
             flexDirection: 'row',
             justifyContent: 'flex-start',
             width: '100%',
-            zIndex: 10
-        }
+            zIndex: 10,
+        },
     };
 });

@@ -1,75 +1,78 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {injectIntl, intlShape} from 'react-intl';
-import {
-    Platform,
-    InteractionManager,
-    View
-} from 'react-native';
+import {intlShape} from 'react-intl';
+import {Platform, View} from 'react-native';
 
-import {General, RequestStatus} from 'mattermost-redux/constants';
+import {debounce} from 'mattermost-redux/actions/helpers';
+import {General} from 'mattermost-redux/constants';
 import EventEmitter from 'mattermost-redux/utils/event_emitter';
 
 import CustomList from 'app/components/custom_list';
 import ChannelListRow from 'app/components/custom_list/channel_list_row';
+import FormattedText from 'app/components/formatted_text';
+import KeyboardLayout from 'app/components/layout/keyboard_layout';
 import Loading from 'app/components/loading';
 import SearchBar from 'app/components/search_bar';
 import StatusBar from 'app/components/status_bar';
 import {alertErrorWithFallback} from 'app/utils/general';
 import {changeOpacity, makeStyleSheetFromTheme, setNavigatorStyles} from 'app/utils/theme';
 
-class MoreChannels extends PureComponent {
+export default class MoreChannels extends PureComponent {
     static propTypes = {
-        intl: intlShape.isRequired,
-        currentUserId: PropTypes.string.isRequired,
-        currentTeamId: PropTypes.string.isRequired,
-        navigator: PropTypes.object,
-        theme: PropTypes.object.isRequired,
-        canCreateChannels: PropTypes.bool.isRequired,
-        channels: PropTypes.array,
-        closeButton: PropTypes.object,
-        requestStatus: PropTypes.object.isRequired,
         actions: PropTypes.shape({
             handleSelectChannel: PropTypes.func.isRequired,
             joinChannel: PropTypes.func.isRequired,
             getChannels: PropTypes.func.isRequired,
             searchChannels: PropTypes.func.isRequired,
-            setChannelDisplayName: PropTypes.func.isRequired
-        }).isRequired
+            setChannelDisplayName: PropTypes.func.isRequired,
+        }).isRequired,
+        canCreateChannels: PropTypes.bool.isRequired,
+        channels: PropTypes.array,
+        closeButton: PropTypes.object,
+        currentUserId: PropTypes.string.isRequired,
+        currentTeamId: PropTypes.string.isRequired,
+        navigator: PropTypes.object,
+        theme: PropTypes.object.isRequired,
     };
 
-    leftButton = {
-        id: 'close-more-channels'
+    static defaultProps = {
+        channels: [],
     };
 
-    rightButton = {
-        id: 'create-pub-channel',
-        showAsAction: 'always'
+    static contextTypes = {
+        intl: intlShape.isRequired,
     };
 
-    constructor(props) {
-        super(props);
+    constructor(props, context) {
+        super(props, context);
 
         this.searchTimeoutId = 0;
+        this.page = -1;
+        this.next = true;
 
         this.state = {
             channels: props.channels.slice(0, General.CHANNELS_CHUNK_SIZE),
-            createScreenVisible: false,
-            page: 0,
+            loading: false,
             adding: false,
-            next: true,
-            searching: false,
-            showNoResults: false,
-            term: ''
+            term: '',
         };
-        this.rightButton.title = props.intl.formatMessage({id: 'mobile.create_channel', defaultMessage: 'Create'});
-        this.leftButton = {...this.leftButton, icon: props.closeButton};
+
+        this.rightButton = {
+            id: 'create-pub-channel',
+            title: context.intl.formatMessage({id: 'mobile.create_channel', defaultMessage: 'Create'}),
+            showAsAction: 'always',
+        };
+
+        this.leftButton = {
+            id: 'close-more-channels',
+            icon: props.closeButton,
+        };
 
         const buttons = {
-            leftButtons: [this.leftButton]
+            leftButtons: [this.leftButton],
         };
 
         if (props.canCreateChannels) {
@@ -80,117 +83,87 @@ class MoreChannels extends PureComponent {
         props.navigator.setButtons(buttons);
     }
 
-    componentWillMount() {
-        EventEmitter.on('closing-create-channel', this.handleCreateScreenVisible);
-    }
-
     componentDidMount() {
-        // set the timeout to 400 cause is the time that the modal takes to open
-        // Somehow interactionManager doesn't care
-        setTimeout(() => {
-            this.props.actions.getChannels(this.props.currentTeamId, 0);
-        }, 400);
+        this.doGetChannels();
     }
 
     componentWillReceiveProps(nextProps) {
+        const {term} = this.state;
+        let channels;
+
         if (this.props.theme !== nextProps.theme) {
             setNavigatorStyles(this.props.navigator, nextProps.theme);
         }
 
-        const {requestStatus} = this.props;
-        if (this.state.searching &&
-            nextProps.requestStatus.status === RequestStatus.SUCCESS) {
-            const channels = this.filterChannels(nextProps.channels, this.state.term);
-            this.setState({channels, showNoResults: true});
-        } else if (requestStatus.status === RequestStatus.STARTED &&
-            nextProps.requestStatus.status === RequestStatus.SUCCESS) {
-            const {page} = this.state;
-            const channels = nextProps.channels.slice(0, (page + 1) * General.CHANNELS_CHUNK_SIZE);
-            this.setState({channels, showNoResults: true});
+        if (nextProps.channels !== this.props.channels) {
+            channels = nextProps.channels;
+            if (term) {
+                channels = this.filterChannels(nextProps.channels, term);
+            }
         }
 
-        if (!this.state.createScreenVisible) {
-            this.headerButtons(nextProps.canCreateChannels, true);
+        if (channels) {
+            this.setState({channels});
         }
     }
 
-    componentWillUnmount() {
-        EventEmitter.off('closing-create-channel', this.handleCreateScreenVisible);
-    }
+    cancelSearch = () => {
+        const {channels} = this.props;
+
+        this.setState({
+            channels,
+            term: '',
+        });
+    };
 
     close = () => {
         this.props.navigator.dismissModal({animationType: 'slide-down'});
     };
 
-    emitCanCreateChannel = (enabled) => {
-        this.headerButtons(this.props.canCreateChannels, enabled);
+    doGetChannels = () => {
+        const {actions, currentTeamId} = this.props;
+        const {loading, term} = this.state;
+
+        if (this.next && !loading && !term) {
+            this.setState({loading: true}, () => {
+                actions.getChannels(
+                    currentTeamId,
+                    this.page + 1,
+                    General.CHANNELS_CHUNK_SIZE
+                ).then(this.loadedChannels);
+            });
+        }
     };
 
-    handleCreateScreenVisible = (createScreenVisible) => {
-        this.setState({createScreenVisible});
+    filterChannels = (channels, term) => {
+        const lowerCasedTerm = term.toLowerCase();
+        return channels.filter((c) => {
+            return (c.name.toLowerCase().includes(lowerCasedTerm) || c.display_name.toLowerCase().includes(lowerCasedTerm));
+        });
     };
 
-    headerButtons = (canCreateChannels, enabled) => {
+    getChannels = debounce(this.doGetChannels, 100);
+
+    headerButtons = (createEnabled) => {
+        const {canCreateChannels} = this.props;
         const buttons = {
-            leftButtons: [this.leftButton]
+            leftButtons: [this.leftButton],
         };
 
         if (canCreateChannels) {
-            buttons.rightButtons = [{...this.rightButton, disabled: !enabled}];
+            buttons.rightButtons = [{...this.rightButton, disabled: !createEnabled}];
         }
 
         this.props.navigator.setButtons(buttons);
     };
 
-    filterChannels = (channels, term) => {
-        return channels.filter((c) => {
-            return (c.name.toLowerCase().indexOf(term) !== -1 || c.display_name.toLowerCase().indexOf(term) !== -1);
-        });
-    };
-
-    searchProfiles = (text) => {
-        const term = text.toLowerCase();
-
-        if (term) {
-            const channels = this.filterChannels(this.state.channels, term);
-            this.setState({channels, term, searching: true});
-            clearTimeout(this.searchTimeoutId);
-
-            this.searchTimeoutId = setTimeout(() => {
-                this.props.actions.searchChannels(this.props.currentTeamId, term);
-            }, General.SEARCH_TIMEOUT_MILLISECONDS);
-        } else {
-            this.cancelSearch();
+    loadedChannels = ({data}) => {
+        if (data && !data.length) {
+            this.next = false;
         }
-    };
 
-    cancelSearch = () => {
-        this.props.actions.getChannels(this.props.currentTeamId, 0);
-        this.setState({
-            term: '',
-            searching: false,
-            page: 0
-        });
-    };
-
-    loadMoreChannels = () => {
-        let {page} = this.state;
-        if (this.props.requestStatus.status !== RequestStatus.STARTED && this.state.next && !this.state.searching) {
-            page = page + 1;
-            this.props.actions.getChannels(
-                this.props.currentTeamId,
-                page,
-                General.CHANNELS_CHUNK_SIZE
-            ).then(({data}) => {
-                if (data && data.length) {
-                    this.setState({
-                        page
-                    });
-                } else {
-                    this.setState({next: false});
-                }
-            });
-        }
+        this.page += 1;
+        this.setState({loading: false});
     };
 
     onNavigatorEvent = (event) => {
@@ -200,19 +173,18 @@ class MoreChannels extends PureComponent {
                 this.close();
                 break;
             case 'create-pub-channel':
-                this.setState({
-                    createScreenVisible: true
-                }, this.onCreateChannel);
+                this.onCreateChannel();
                 break;
             }
         }
     };
 
     onSelectChannel = async (id) => {
-        const {actions, currentTeamId, currentUserId, intl} = this.props;
+        const {intl} = this.context;
+        const {actions, currentTeamId, currentUserId} = this.props;
         const {channels} = this.state;
 
-        this.emitCanCreateChannel(false);
+        this.headerButtons(false);
         this.setState({adding: true});
 
         const channel = channels.find((c) => c.id === id);
@@ -224,13 +196,13 @@ class MoreChannels extends PureComponent {
                 result.error,
                 {
                     id: 'mobile.join_channel.error',
-                    defaultMessage: "We couldn't join the channel {displayName}. Please check your connection and try again."
+                    defaultMessage: "We couldn't join the channel {displayName}. Please check your connection and try again.",
                 },
                 {
-                    displayName: channel ? channel.display_name : ''
+                    displayName: channel ? channel.display_name : '',
                 }
             );
-            this.emitCanCreateChannel(true);
+            this.headerButtons(true);
             this.setState({adding: false});
         } else {
             if (channel) {
@@ -241,116 +213,201 @@ class MoreChannels extends PureComponent {
             await actions.handleSelectChannel(id);
 
             EventEmitter.emit('close_channel_drawer');
-            InteractionManager.runAfterInteractions(() => {
+            requestAnimationFrame(() => {
                 this.close();
             });
         }
     };
 
     onCreateChannel = () => {
-        const {intl, navigator, theme} = this.props;
+        const {formatMessage} = this.context.intl;
+        const {navigator, theme} = this.props;
 
         navigator.push({
             screen: 'CreateChannel',
             animationType: 'slide-up',
-            title: intl.formatMessage({id: 'mobile.create_channel.public', defaultMessage: 'New Public Channel'}),
+            title: formatMessage({id: 'mobile.create_channel.public', defaultMessage: 'New Public Channel'}),
             backButtonTitle: '',
             animated: true,
             navigatorStyle: {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
+                screenBackgroundColor: theme.centerChannelBg,
             },
             passProps: {
-                channelType: General.OPEN_CHANNEL
-            }
+                channelType: General.OPEN_CHANNEL,
+            },
         });
     };
 
-    render() {
-        const {intl, requestStatus, theme} = this.props;
-        const {adding, channels, searching, term} = this.state;
-        const {formatMessage} = intl;
-        const isLoading = requestStatus.status === RequestStatus.STARTED || requestStatus.status === RequestStatus.NOT_STARTED;
+    renderLoading = () => {
+        const {theme, channels} = this.props;
         const style = getStyleFromTheme(theme);
-        const more = searching ? () => true : this.loadMoreChannels;
 
-        let content;
-        if (adding) {
-            content = (<Loading/>);
-        } else {
-            content = (
-                <View style={{flex: 1}}>
-                    <View
-                        style={{marginVertical: 5}}
-                    >
-                        <SearchBar
-                            ref='search_bar'
-                            placeholder={formatMessage({id: 'search_bar.search', defaultMessage: 'Search'})}
-                            cancelTitle={formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'})}
-                            backgroundColor='transparent'
-                            inputHeight={33}
-                            inputStyle={{
-                                backgroundColor: changeOpacity(theme.centerChannelColor, 0.2),
-                                color: theme.centerChannelColor,
-                                fontSize: 15,
-                                lineHeight: 66
-                            }}
-                            placeholderTextColor={changeOpacity(theme.centerChannelColor, 0.5)}
-                            tintColorSearch={changeOpacity(theme.centerChannelColor, 0.5)}
-                            tintColorDelete={changeOpacity(theme.centerChannelColor, 0.5)}
-                            titleCancelColor={theme.centerChannelColor}
-                            onChangeText={this.searchProfiles}
-                            onSearchButtonPress={this.searchProfiles}
-                            onCancelButtonPress={this.cancelSearch}
-                            value={term}
-                        />
-                    </View>
-                    <CustomList
-                        data={channels}
-                        theme={theme}
-                        searching={searching}
-                        onListEndReached={more}
-                        loading={isLoading}
-                        listScrollRenderAheadDistance={50}
-                        showSections={false}
-                        renderRow={ChannelListRow}
-                        onRowPress={this.onSelectChannel}
-                        loadingText={{id: 'mobile.loading_channels', defaultMessage: 'Loading Channels...'}}
-                        showNoResults={this.state.showNoResults}
+        if (!channels.length && this.page <= 0) {
+            return null;
+        }
+
+        return (
+            <View style={style.loadingContainer}>
+                <FormattedText
+                    id='mobile.loading_channels'
+                    defaultMessage='Loading Channels...'
+                    style={style.loadingText}
+                />
+            </View>
+        );
+    };
+
+    renderNoResults = () => {
+        const {term, loading} = this.state;
+        const {theme} = this.props;
+        const style = getStyleFromTheme(theme);
+
+        if (loading) {
+            return null;
+        }
+
+        if (term) {
+            return (
+                <View style={style.noResultContainer}>
+                    <FormattedText
+                        id='mobile.custom_list.no_results'
+                        defaultMessage='No Results'
+                        style={style.noResultText}
                     />
                 </View>
             );
         }
 
         return (
-            <View style={style.container}>
+            <View style={style.noResultContainer}>
+                <FormattedText
+                    id='more_channels.noMore'
+                    defaultMessage='No more channels to join'
+                    style={style.noResultText}
+                />
+            </View>
+        );
+    };
+
+    renderItem = (props) => {
+        return (
+            <ChannelListRow {...props}/>
+        );
+    }
+
+    searchChannels = (text) => {
+        const {actions, channels, currentTeamId} = this.props;
+
+        if (text) {
+            const filtered = this.filterChannels(channels, text);
+            this.setState({
+                channels: filtered,
+                term: text,
+            });
+            clearTimeout(this.searchTimeoutId);
+
+            this.searchTimeoutId = setTimeout(() => {
+                actions.searchChannels(currentTeamId, text.toLowerCase());
+            }, General.SEARCH_TIMEOUT_MILLISECONDS);
+        } else {
+            this.cancelSearch();
+        }
+    };
+
+    render() {
+        const {formatMessage} = this.context.intl;
+        const {theme} = this.props;
+        const {adding, channels, loading, term} = this.state;
+        const more = term ? () => true : this.getChannels;
+        const style = getStyleFromTheme(theme);
+
+        let content;
+        if (adding) {
+            content = (<Loading/>);
+        } else {
+            const searchBarInput = {
+                backgroundColor: changeOpacity(theme.centerChannelColor, 0.2),
+                color: theme.centerChannelColor,
+                fontSize: 15,
+                ...Platform.select({
+                    android: {
+                        marginBottom: -5,
+                    },
+                }),
+            };
+
+            content = (
+                <React.Fragment>
+                    <View style={style.searchBar}>
+                        <SearchBar
+                            ref='search_bar'
+                            placeholder={formatMessage({id: 'search_bar.search', defaultMessage: 'Search'})}
+                            cancelTitle={formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'})}
+                            backgroundColor='transparent'
+                            inputHeight={33}
+                            inputStyle={searchBarInput}
+                            placeholderTextColor={changeOpacity(theme.centerChannelColor, 0.5)}
+                            tintColorSearch={changeOpacity(theme.centerChannelColor, 0.5)}
+                            tintColorDelete={changeOpacity(theme.centerChannelColor, 0.5)}
+                            titleCancelColor={theme.centerChannelColor}
+                            onChangeText={this.searchChannels}
+                            onSearchButtonPress={this.searchChannels}
+                            onCancelButtonPress={this.cancelSearch}
+                            autoCapitalize='none'
+                            value={term}
+                        />
+                    </View>
+                    <CustomList
+                        data={channels}
+                        extraData={loading}
+                        key='custom_list'
+                        loading={loading}
+                        loadingComponent={this.renderLoading()}
+                        noResults={this.renderNoResults()}
+                        onLoadMore={more}
+                        onRowPress={this.onSelectChannel}
+                        renderItem={this.renderItem}
+                        theme={theme}
+                    />
+                </React.Fragment>
+            );
+        }
+
+        return (
+            <KeyboardLayout>
                 <StatusBar/>
                 {content}
-            </View>
+            </KeyboardLayout>
         );
     }
 }
 
 const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
     return {
-        container: {
-            flex: 1,
-            backgroundColor: theme.centerChannelBg
+        searchBar: {
+            marginVertical: 5,
         },
-        navTitle: {
-            ...Platform.select({
-                android: {
-                    fontSize: 18
-                },
-                ios: {
-                    fontSize: 15,
-                    fontWeight: 'bold'
-                }
-            })
-        }
+        loadingContainer: {
+            alignItems: 'center',
+            backgroundColor: theme.centerChannelBg,
+            height: 70,
+            justifyContent: 'center',
+        },
+        loadingText: {
+            color: changeOpacity(theme.centerChannelColor, 0.6),
+        },
+        noResultContainer: {
+            flexGrow: 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+        },
+        noResultText: {
+            fontSize: 26,
+            color: changeOpacity(theme.centerChannelColor, 0.5),
+        },
     };
 });
-
-export default injectIntl(MoreChannels);

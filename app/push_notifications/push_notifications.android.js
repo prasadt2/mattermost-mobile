@@ -1,9 +1,12 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
-import {AppRegistry, AppState} from 'react-native';
+import {AppState, NativeModules} from 'react-native';
 import {NotificationsAndroid, PendingNotifications} from 'react-native-notifications';
-import Notification from 'react-native-notifications/notification.android';
+
+import ephemeralStore from 'app/store/ephemeral_store';
+
+const {NotificationPreferences} = NativeModules;
 
 class PushNotification {
     constructor() {
@@ -15,6 +18,9 @@ class PushNotification {
 
         NotificationsAndroid.setRegistrationTokenUpdateListener((deviceToken) => {
             this.deviceToken = deviceToken;
+            if (this.onRegister) {
+                this.onRegister({token: this.deviceToken});
+            }
         });
 
         NotificationsAndroid.setNotificationReceivedListener((notification) => {
@@ -30,34 +36,19 @@ class PushNotification {
                 this.handleNotification(data, true);
             }
         });
-
-        AppRegistry.registerHeadlessTask('notificationReplied', () => async (deviceNotification) => {
-            const notification = new Notification(deviceNotification);
-            const data = notification.getData();
-
-            if (this.onReply && AppState.currentState === 'background') {
-                this.onReply(data, data.text, parseInt(data.badge, 10) - parseInt(data.msg_count, 10));
-            } else {
-                this.deviceNotification = {
-                    data,
-                    text: data.text,
-                    badge: parseInt(data.badge, 10) - parseInt(data.msg_count, 10)
-                };
-            }
-        });
     }
 
     handleNotification = (data, userInteraction) => {
-        const deviceNotification = {
+        this.deviceNotification = {
             data,
             foreground: !userInteraction && AppState.currentState === 'active',
             message: data.message,
             userInfo: data.userInfo,
-            userInteraction
+            userInteraction,
         };
 
         if (this.onNotification) {
-            this.onNotification(deviceNotification);
+            this.onNotification(this.deviceNotification);
         }
     };
 
@@ -76,6 +67,7 @@ class PushNotification {
                     if (notification) {
                         const data = notification.getData();
                         if (data) {
+                            ephemeralStore.appStartedFromPushNotification = true;
                             this.handleNotification(data, true);
                         }
                     }
@@ -112,6 +104,14 @@ class PushNotification {
 
     resetNotification() {
         this.deviceNotification = null;
+    }
+
+    async clearChannelNotifications(channelId) {
+        const notifications = await NotificationPreferences.getDeliveredNotifications();
+        const notificationForChannel = notifications.find((n) => n.channel_id === channelId);
+        if (notificationForChannel) {
+            NotificationPreferences.removeDeliveredNotifications(notificationForChannel.identifier, channelId);
+        }
     }
 }
 

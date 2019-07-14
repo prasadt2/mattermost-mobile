@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
@@ -11,7 +11,7 @@ import ErrorList from './error_list';
 
 function mapStateToProps(state) {
     return {
-        errors: getDisplayableErrors(state)
+        errors: getDisplayableErrors(state),
     };
 }
 
@@ -19,8 +19,8 @@ function mapDispatchToProps(dispatch) {
     return {
         actions: bindActionCreators({
             dismissError,
-            clearErrors
-        }, dispatch)
+            clearErrors,
+        }, dispatch),
     };
 }
 

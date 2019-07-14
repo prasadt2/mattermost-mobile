@@ -1,62 +1,79 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import {Image, Platform, Text} from 'react-native';
-import FastImage from 'react-native-fast-image';
+import {
+    Image,
+    Platform,
+    StyleSheet,
+    Text,
+} from 'react-native';
 
 import CustomPropTypes from 'app/constants/custom_prop_types';
-import {EmojiIndicesByAlias, Emojis} from 'app/utils/emojis';
-
-import {Client4} from 'mattermost-redux/client';
+import ImageCacheManager from 'app/utils/image_cache_manager';
 
 export default class Emoji extends React.PureComponent {
     static propTypes = {
-        customEmojis: PropTypes.object,
+
+        /*
+         * Emoji text name.
+         */
         emojiName: PropTypes.string.isRequired,
-        fontSize: PropTypes.number,
+
+        /*
+         * Image URL for the emoji.
+         */
+        imageUrl: PropTypes.string.isRequired,
+
+        /*
+         * Set if this is a custom emoji.
+         */
+        isCustomEmoji: PropTypes.bool.isRequired,
+
+        /*
+         * Set to render only the text and no image.
+         */
+        displayTextOnly: PropTypes.bool,
         literal: PropTypes.string,
-        size: PropTypes.number.isRequired,
+        size: PropTypes.number,
         textStyle: CustomPropTypes.Style,
-        token: PropTypes.string.isRequired
     };
 
     static defaultProps = {
         customEmojis: new Map(),
-        literal: ''
+        literal: '',
+        imageUrl: '',
+        isCustomEmoji: false,
     };
 
     constructor(props) {
         super(props);
 
         this.state = {
-            ...this.getImageUrl(props),
-            originalWidth: 0,
-            originalHeight: 0
+            imageUrl: null,
         };
     }
 
     componentWillMount() {
+        const {displayTextOnly, emojiName, imageUrl} = this.props;
         this.mounted = true;
-        if (this.state.imageUrl && this.state.isCustomEmoji) {
-            this.updateImageHeight(this.state.imageUrl);
+        if (!displayTextOnly && imageUrl) {
+            ImageCacheManager.cache(`emoji-${emojiName}`, imageUrl, this.setImageUrl);
         }
     }
 
     componentWillReceiveProps(nextProps) {
-        if (nextProps.customEmojis !== this.props.customEmojis || nextProps.emojiName !== this.props.emojiName) {
+        const {displayTextOnly, emojiName, imageUrl} = nextProps;
+        if (emojiName !== this.props.emojiName && this.mounted) {
             this.setState({
-                ...this.getImageUrl(nextProps),
-                originalWidth: 0,
-                originalHeight: 0
+                imageUrl: null,
             });
         }
-    }
 
-    componentWillUpdate(nextProps, nextState) {
-        if (nextState.imageUrl !== this.state.imageUrl && nextState.imageUrl && nextState.isCustomEmoji) {
-            this.updateImageHeight(nextState.imageUrl);
+        if (!displayTextOnly && imageUrl &&
+                imageUrl !== this.props.imageUrl) {
+            ImageCacheManager.cache(`emoji-${emojiName}`, imageUrl, this.setImageUrl);
         }
     }
 
@@ -64,99 +81,55 @@ export default class Emoji extends React.PureComponent {
         this.mounted = false;
     }
 
-    getImageUrl = (props = this.props) => {
-        const emojiName = props.emojiName;
-
-        let imageUrl = '';
-        let isCustomEmoji = false;
-        if (EmojiIndicesByAlias.has(emojiName)) {
-            const emoji = Emojis[EmojiIndicesByAlias.get(emojiName)];
-
-            imageUrl = Client4.getSystemEmojiImageUrl(emoji.filename);
-        } else if (props.customEmojis.has(emojiName)) {
-            const emoji = props.customEmojis.get(emojiName);
-
-            imageUrl = Client4.getCustomEmojiImageUrl(emoji.id);
-            isCustomEmoji = true;
+    setImageUrl = (imageUrl) => {
+        if (this.mounted) {
+            this.setState({
+                imageUrl,
+            });
         }
-
-        return {
-            imageUrl,
-            isCustomEmoji
-        };
-    }
-
-    updateImageHeight = (imageUrl) => {
-        Image.getSize(imageUrl, (originalWidth, originalHeight) => {
-            if (this.mounted) {
-                this.setState({
-                    originalWidth,
-                    originalHeight
-                });
-            }
-        });
-    }
+    };
 
     render() {
         const {
-            fontSize,
             literal,
-            size,
             textStyle,
-            token
+            displayTextOnly,
         } = this.props;
+        const {imageUrl} = this.state;
 
-        if (!this.state.imageUrl) {
+        let size = this.props.size;
+        let fontSize = size;
+        if (!size && textStyle) {
+            const flatten = StyleSheet.flatten(textStyle);
+            fontSize = flatten.fontSize;
+            size = fontSize;
+        }
+
+        if (displayTextOnly) {
             return <Text style={textStyle}>{literal}</Text>;
         }
 
-        let ImageComponent;
-        if (Platform.OS === 'android') {
-            ImageComponent = Image;
-        } else {
-            ImageComponent = FastImage;
-        }
-
-        const source = {
-            uri: this.state.imageUrl,
-            headers: {
-                Authorization: `Bearer ${token}`
-            }
-        };
-
-        let width = size;
-        let height = size;
-        if (this.state.originalHeight && this.state.originalWidth) {
-            if (this.state.originalWidth > this.state.originalHeight) {
-                height = (size * this.state.originalHeight) / this.state.originalWidth;
-            } else if (this.state.originalWidth < this.state.originalHeight) {
-                // This may cause text to reflow, but its impossible to add a horizontal margin
-                width = (size * this.state.originalWidth) / this.state.originalHeight;
-            }
-        }
-
-        let marginTop = 0;
-        if (fontSize) {
-            // Center the image vertically on iOS (does nothing on Android)
-            marginTop = (height - 16) / 2;
-
-            // hack to get the vertical alignment looking better
-            if (fontSize === 17) {
-                marginTop -= 2;
-            } else if (fontSize === 15) {
-                marginTop += 1;
-            }
-        }
+        const width = size;
+        const height = size;
 
         // Android can't change the size of an image after its first render, so
         // force a new image to be rendered when the size changes
         const key = Platform.OS === 'android' ? (height + '-' + width) : null;
 
+        if (!imageUrl) {
+            return (
+                <Image
+                    key={key}
+                    style={{width, height}}
+                />
+            );
+        }
+
         return (
-            <ImageComponent
+            <Image
                 key={key}
-                style={{width, height, marginTop}}
-                source={source}
+                style={{width, height}}
+                source={{uri: imageUrl}}
                 onError={this.onError}
             />
         );

@@ -1,18 +1,22 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {Alert, Animated, CameraRoll, InteractionManager, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import RNFetchBlob from 'react-native-fetch-blob';
-import {AnimatedCircularProgress} from 'react-native-circular-progress';
+import RNFetchBlob from 'rn-fetch-blob';
+import {CircularProgress} from 'react-native-circular-progress';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {intlShape} from 'react-intl';
 
 import {Client4} from 'mattermost-redux/client';
 
 import FormattedText from 'app/components/formatted_text';
+import mattermostBucket from 'app/mattermost_bucket';
+import {getLocalFilePathFromFile} from 'app/utils/file';
 import {emptyFunction} from 'app/utils/general';
+
+import DownloaderBottomContent from './downloader_bottom_content.js';
 
 const {View: AnimatedView} = Animated;
 
@@ -20,13 +24,13 @@ export default class Downloader extends PureComponent {
     static propTypes = {
         deviceHeight: PropTypes.number.isRequired,
         deviceWidth: PropTypes.number.isRequired,
+        downloadPath: PropTypes.string,
         file: PropTypes.object.isRequired,
         onDownloadCancel: PropTypes.func,
         onDownloadSuccess: PropTypes.func,
         prompt: PropTypes.bool,
         show: PropTypes.bool,
-        downloadPath: PropTypes.string,
-        saveToCameraRoll: PropTypes.bool
+        saveToCameraRoll: PropTypes.bool,
     };
 
     static defaultProps = {
@@ -36,11 +40,11 @@ export default class Downloader extends PureComponent {
         prompt: false,
         show: false,
         force: false,
-        saveToCameraRoll: true
+        saveToCameraRoll: true,
     };
 
     static contextTypes = {
-        intl: intlShape
+        intl: intlShape,
     };
 
     constructor(props) {
@@ -49,7 +53,7 @@ export default class Downloader extends PureComponent {
         this.state = {
             downloaderTop: new Animated.Value(props.deviceHeight),
             progress: 0,
-            started: false
+            started: false,
         };
     }
 
@@ -74,7 +78,7 @@ export default class Downloader extends PureComponent {
             this.toggleDownloader();
             this.setState({
                 didCancel: false,
-                progress: 0
+                progress: 0,
             });
         } else if (!nextProps.show && this.props.show) {
             this.toggleDownloader(false);
@@ -88,7 +92,7 @@ export default class Downloader extends PureComponent {
             this.setState({
                 didCancel: true,
                 progress: 0,
-                started: false
+                started: false,
             });
         }
         if (this.downloadTask) {
@@ -106,13 +110,12 @@ export default class Downloader extends PureComponent {
             Animated.spring(this.state.downloaderTop, {
                 toValue: top,
                 tension: 8,
-                friction: 5
-            })
+                friction: 5,
+            }),
         ]).start();
     };
 
     renderProgress = (fill) => {
-        const {saveToCameraRoll} = this.props;
         const {isVideo} = this.state;
         const realFill = Number(fill.toFixed(0));
 
@@ -147,54 +150,17 @@ export default class Downloader extends PureComponent {
             );
         }
 
-        let savedComponent;
-        if (realFill < 100 || this.state.didCancel) {
-            savedComponent = (
-                <FormattedText
-                    id='mobile.downloader.downloading'
-                    defaultMessage='Downloading...'
-                    style={styles.bottomText}
-                />
-            );
-        } else if (saveToCameraRoll && isVideo) {
-            savedComponent = (
-                <FormattedText
-                    id='mobile.downloader.video_saved'
-                    defaultMessage='Video Saved'
-                    style={styles.bottomText}
-                />
-            );
-        } else if (saveToCameraRoll) {
-            savedComponent = (
-                <FormattedText
-                    id='mobile.downloader.image_saved'
-                    defaultMessage='Image Saved'
-                    style={styles.bottomText}
-                />
-            );
-        } else {
-            savedComponent = (
-                <FormattedText
-                    id='mobile.downloader.complete'
-                    defaultMessage='Download complete'
-                    style={styles.bottomText}
-                />
-            );
-        }
-
         return (
-            <View style={styles.progressContent}>
+            <View>
                 {component}
-                <View style={styles.bottomContent}>
-                    {savedComponent}
-                </View>
             </View>
+
         );
     };
 
     renderStartDownload = () => {
         return (
-            <View style={styles.progressContent}>
+            <View>
                 <TouchableOpacity onPress={this.startDownload}>
                     <View style={styles.manualDownloadContainer}>
                         <Icon
@@ -222,12 +188,12 @@ export default class Downloader extends PureComponent {
             progress: 100,
             started: true,
             force: true,
-            isVideo: true
+            isVideo: true,
         });
         Animated.spring(this.state.downloaderTop, {
             toValue: top,
             tension: 8,
-            friction: 5
+            friction: 5,
         }).start(async () => {
             await CameraRoll.saveToCameraRoll(videoPath, 'video');
             this.props.onDownloadSuccess();
@@ -243,36 +209,39 @@ export default class Downloader extends PureComponent {
         Alert.alert(
             intl.formatMessage({
                 id: 'mobile.downloader.failed_title',
-                defaultMessage: 'Download failed'
+                defaultMessage: 'Download failed',
             }),
             intl.formatMessage({
                 id: 'mobile.downloader.failed_description',
-                defaultMessage: 'An error occurred while downloading the file. Please check your internet connection and try again.\n'
+                defaultMessage: 'An error occurred while downloading the file. Please check your internet connection and try again.\n',
             }),
             [{
                 text: intl.formatMessage({
                     id: 'mobile.server_upgrade.button',
-                    defaultMessage: 'OK'
+                    defaultMessage: 'OK',
                 }),
-                onPress: () => this.downloadDidCancel()
+                onPress: () => this.downloadDidCancel(),
             }]
         );
     };
 
     startDownload = async () => {
         const {file, downloadPath, prompt, saveToCameraRoll} = this.props;
+        const {data} = file;
 
         try {
             if (this.state.didCancel) {
                 this.setState({didCancel: false});
             }
 
-            const imageUrl = Client4.getFileUrl(file.id);
+            const certificate = await mattermostBucket.getPreference('cert');
+            const imageUrl = Client4.getFileUrl(data.id);
             const options = {
-                session: file.id,
+                session: data.id,
                 timeout: 10000,
                 indicator: true,
-                overwrite: true
+                overwrite: true,
+                certificate,
             };
 
             if (downloadPath && prompt) {
@@ -286,10 +255,10 @@ export default class Downloader extends PureComponent {
                     }
                 }
 
-                options.path = `${downloadPath}/${file.id}.${file.extension}`;
+                options.path = getLocalFilePathFromFile(downloadPath, file);
             } else {
                 options.fileCache = true;
-                options.appendExt = file.extension;
+                options.appendExt = data.extension;
             }
 
             this.downloadTask = RNFetchBlob.config(options).fetch('GET', imageUrl);
@@ -298,10 +267,11 @@ export default class Downloader extends PureComponent {
                 if (this.mounted) {
                     this.setState({
                         progress,
-                        started: true
+                        started: true,
                     });
                 }
             });
+
             const res = await this.downloadTask;
             let path = res.path();
 
@@ -311,7 +281,7 @@ export default class Downloader extends PureComponent {
 
             if (this.mounted) {
                 this.setState({
-                    progress: 100
+                    progress: 100,
                 }, () => {
                     // need to wait a bit for the progress circle UI to update to the give progress
                     setTimeout(async () => {
@@ -328,14 +298,15 @@ export default class Downloader extends PureComponent {
                 });
             }
 
-            if (saveToCameraRoll) {
+            if (saveToCameraRoll && res) {
                 res.flush(); // remove the temp file
             }
+
             this.downloadTask = null;
         } catch (error) {
             // cancellation throws so we need to catch
             if (downloadPath) {
-                RNFetchBlob.fs.unlink(`${downloadPath}/${file.id}.${file.extension}`);
+                RNFetchBlob.fs.unlink(getLocalFilePathFromFile(downloadPath, file));
             }
             if (error.message !== 'cancelled' && this.mounted) {
                 this.showDownloadFailedAlert();
@@ -352,7 +323,7 @@ export default class Downloader extends PureComponent {
         Animated.spring(this.state.downloaderTop, {
             toValue: top,
             tension: 8,
-            friction: 5
+            friction: 5,
         }).start(() => {
             if (show && !prompt) {
                 this.startDownload();
@@ -361,12 +332,12 @@ export default class Downloader extends PureComponent {
     };
 
     render() {
-        const {show, downloadPath} = this.props;
-        if ((!show || this.state.didCancel) && !this.state.force) {
+        const {show, downloadPath, saveToCameraRoll} = this.props;
+        if (!show && !this.state.force) {
             return null;
         }
 
-        const {progress, started} = this.state;
+        const {progress, started, isVideo} = this.state;
 
         const containerHeight = show ? '100%' : 0;
 
@@ -380,17 +351,23 @@ export default class Downloader extends PureComponent {
             <View style={[styles.container, {height: containerHeight}]}>
                 <AnimatedView style={[styles.downloader, {top: this.state.downloaderTop}]}>
                     <View style={styles.progressCircleContent}>
-                        <AnimatedCircularProgress
+                        <CircularProgress
                             size={120}
                             fill={progress}
                             width={4}
                             backgroundColor='rgba(255, 255, 255, 0.5)'
                             tintColor='white'
                             rotation={0}
-                            style={styles.progressCircle}
                         >
                             {component}
-                        </AnimatedCircularProgress>
+                        </CircularProgress>
+                        { !this.state.didCancel && (
+                            <DownloaderBottomContent
+                                saveToCameraRoll={saveToCameraRoll}
+                                isVideo={isVideo}
+                                progressPercent={progress}
+                            />
+                        )}
                     </View>
                 </AnimatedView>
             </View>
@@ -400,34 +377,30 @@ export default class Downloader extends PureComponent {
 
 const styles = StyleSheet.create({
     bottomContent: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
         alignItems: 'center',
-        justifyContent: 'center'
+        marginTop: 10,
     },
     bottomText: {
         color: 'white',
         fontSize: 16,
-        fontWeight: '600'
+        fontWeight: '600',
     },
     cancelButton: {
         height: 30,
         width: 60,
         alignItems: 'center',
         justifyContent: 'center',
-        marginTop: 5
+        marginTop: 5,
     },
     cancelText: {
         color: 'white',
-        fontSize: 12
+        fontSize: 12,
     },
     container: {
         position: 'absolute',
         top: 0,
         left: 0,
-        width: '100%'
+        width: '100%',
     },
     downloader: {
         alignItems: 'center',
@@ -435,46 +408,37 @@ const styles = StyleSheet.create({
         height: 220,
         width: 236,
         borderRadius: 8,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)'
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
     },
     progressContainer: {
-        flex: 1
-    },
-    progressContent: {
-        position: 'absolute',
-        height: '100%',
-        width: '100%',
-        top: 0,
-        left: 0,
-        alignItems: 'center',
-        justifyContent: 'center'
+        flex: 1,
     },
     progressCircle: {
         width: '100%',
         height: '100%',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
     },
     progressCircleContent: {
         width: 200,
         height: 200,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
     },
     progressCirclePercentage: {
         flex: 1,
         alignItems: 'center',
-        marginTop: 80
+        marginTop: 40,
     },
     progressText: {
         color: 'white',
-        fontSize: 18
+        fontSize: 18,
     },
     manualDownloadContainer: {
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
     },
     downloadTextContainer: {
-        marginTop: 5
-    }
+        marginTop: 5,
+    },
 });

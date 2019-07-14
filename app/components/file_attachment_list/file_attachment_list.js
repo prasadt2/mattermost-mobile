@@ -1,126 +1,189 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {Component} from 'react';
 import PropTypes from 'prop-types';
 import {
-    Keyboard,
-    View,
-    TouchableOpacity
+    ScrollView,
+    StyleSheet,
 } from 'react-native';
 
-import {RequestStatus} from 'mattermost-redux/constants';
+import {Client4} from 'mattermost-redux/client';
 
+import {isDocument, isGif, isVideo} from 'app/utils/file';
+import ImageCacheManager from 'app/utils/image_cache_manager';
+import {previewImageAtIndex} from 'app/utils/images';
 import {preventDoubleTap} from 'app/utils/tap';
+import {emptyFunction} from 'app/utils/general';
+
 import FileAttachment from './file_attachment';
 
 export default class FileAttachmentList extends Component {
     static propTypes = {
         actions: PropTypes.object.isRequired,
-        fetchCache: PropTypes.object.isRequired,
+        canDownloadFiles: PropTypes.bool.isRequired,
+        deviceHeight: PropTypes.number.isRequired,
+        deviceWidth: PropTypes.number.isRequired,
         fileIds: PropTypes.array.isRequired,
-        files: PropTypes.array.isRequired,
-        hideOptionsContext: PropTypes.func.isRequired,
+        files: PropTypes.array,
         isFailed: PropTypes.bool,
         navigator: PropTypes.object,
         onLongPress: PropTypes.func,
-        onPress: PropTypes.func,
         postId: PropTypes.string.isRequired,
         theme: PropTypes.object.isRequired,
-        toggleSelected: PropTypes.func.isRequired,
-        filesForPostRequest: PropTypes.object.isRequired
     };
 
-    componentDidMount() {
-        const {postId} = this.props;
-        this.props.actions.loadFilesForPostIfNecessary(postId);
+    static defaultProps = {
+        files: [],
+    };
+
+    constructor(props) {
+        super(props);
+
+        this.items = [];
+        this.previewItems = [];
+
+        this.state = {
+            loadingFiles: props.files.length === 0,
+        };
+
+        this.buildGalleryFiles(props).then((results) => {
+            this.galleryFiles = results;
+        });
     }
 
-    componentDidUpdate() {
-        const {fileIds, files, filesForPostRequest, postId} = this.props;
-
-        // Fixes an issue where files weren't loading with optimistic post
-        if (!files.length && fileIds.length > 0 && filesForPostRequest.status !== RequestStatus.STARTED) {
-            this.props.actions.loadFilesForPostIfNecessary(postId);
+    componentDidMount() {
+        const {files} = this.props;
+        if (files.length === 0) {
+            this.loadFilesForPost();
         }
     }
 
-    goToImagePreview = (postId, fileId) => {
-        this.props.navigator.showModal({
-            screen: 'ImagePreview',
-            title: '',
-            animationType: 'none',
-            passProps: {
-                fileId,
-                postId
-            },
-            navigatorStyle: {
-                navBarHidden: true,
-                statusBarHidden: false,
-                statusBarHideWithNavBar: false,
-                screenBackgroundColor: 'black',
-                modalPresentationStyle: 'overCurrentContext'
-            }
+    componentWillReceiveProps(nextProps) {
+        if (this.props.files !== nextProps.files) {
+            this.buildGalleryFiles(nextProps).then((results) => {
+                this.galleryFiles = results;
+            });
+        }
+        if (!this.state.loadingFiles && nextProps.files.length === 0) {
+            this.setState({
+                loadingFiles: true,
+            });
+            this.loadFilesForPost();
+        }
+    }
+
+    loadFilesForPost = async () => {
+        await this.props.actions.loadFilesForPostIfNecessary(this.props.postId);
+        this.setState({
+            loadingFiles: false,
         });
+    }
+
+    buildGalleryFiles = async (props) => {
+        const {files} = props;
+        const results = [];
+
+        if (files && files.length) {
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const caption = file.name;
+
+                if (isDocument(file) || isVideo(file) || (!file.has_preview_image && !isGif(file))) {
+                    results.push({
+                        caption,
+                        data: file,
+                    });
+                    continue;
+                }
+
+                let uri;
+                if (file.localPath) {
+                    uri = file.localPath;
+                } else if (isGif(file)) {
+                    uri = await ImageCacheManager.cache(file.name, Client4.getFileUrl(file.id), emptyFunction); // eslint-disable-line no-await-in-loop
+                } else {
+                    uri = await ImageCacheManager.cache(file.name, Client4.getFilePreviewUrl(file.id), emptyFunction); // eslint-disable-line no-await-in-loop
+                }
+
+                results.push({
+                    caption,
+                    source: {uri},
+                    data: file,
+                });
+            }
+        }
+
+        return results;
     };
 
-    handleInfoPress = () => {
-        this.props.hideOptionsContext();
-        this.props.onPress();
+    handleCaptureRef = (ref, idx) => {
+        this.items[idx] = ref;
     };
 
-    handlePreviewPress = (file) => {
-        this.props.hideOptionsContext();
-        Keyboard.dismiss();
-        preventDoubleTap(this.goToImagePreview, this, this.props.postId, file.id);
-    };
+    handlePreviewPress = preventDoubleTap((idx) => {
+        previewImageAtIndex(this.props.navigator, this.items, idx, this.galleryFiles);
+    });
 
-    handlePressIn = () => {
-        this.props.toggleSelected(true);
-    };
+    renderItems = () => {
+        const {canDownloadFiles, deviceWidth, fileIds, files, navigator} = this.props;
 
-    handlePressOut = () => {
-        this.props.toggleSelected(false);
-    };
-
-    render() {
-        const {fileIds, files, isFailed} = this.props;
-
-        let fileAttachments;
         if (!files.length && fileIds.length > 0) {
-            fileAttachments = fileIds.map((id) => (
+            return fileIds.map((id, idx) => (
                 <FileAttachment
                     key={id}
-                    addFileToFetchCache={this.props.actions.addFileToFetchCache}
-                    fetchCache={this.props.fetchCache}
+                    canDownloadFiles={canDownloadFiles}
+                    deviceWidth={deviceWidth}
                     file={{loading: true}}
+                    id={id}
+                    index={idx}
                     theme={this.props.theme}
                 />
             ));
-        } else {
-            fileAttachments = files.map((file) => (
-                <TouchableOpacity
-                    key={file.id}
-                    onLongPress={this.props.onLongPress}
-                    onPressIn={this.handlePressIn}
-                    onPressOut={this.handlePressOut}
-                >
-                    <FileAttachment
-                        addFileToFetchCache={this.props.actions.addFileToFetchCache}
-                        fetchCache={this.props.fetchCache}
-                        file={file}
-                        onInfoPress={this.handleInfoPress}
-                        onPreviewPress={this.handlePreviewPress}
-                        theme={this.props.theme}
-                    />
-                </TouchableOpacity>
-            ));
         }
 
+        return files.map((file, idx) => {
+            const f = {
+                caption: file.name,
+                data: file,
+            };
+
+            return (
+                <FileAttachment
+                    key={file.id}
+                    canDownloadFiles={canDownloadFiles}
+                    deviceWidth={deviceWidth}
+                    file={f}
+                    id={file.id}
+                    index={idx}
+                    navigator={navigator}
+                    onCaptureRef={this.handleCaptureRef}
+                    onPreviewPress={this.handlePreviewPress}
+                    onLongPress={this.props.onLongPress}
+                    theme={this.props.theme}
+                />
+            );
+        });
+    };
+
+    render() {
+        const {fileIds, isFailed} = this.props;
+
         return (
-            <View style={[{flex: 1}, (isFailed && {opacity: 0.5})]}>
-                {fileAttachments}
-            </View>
+            <ScrollView
+                horizontal={true}
+                scrollEnabled={fileIds.length > 1}
+                style={[(isFailed && styles.failed)]}
+                keyboardShouldPersistTaps={'always'}
+            >
+                {this.renderItems()}
+            </ScrollView>
         );
     }
 }
+
+const styles = StyleSheet.create({
+    failed: {
+        opacity: 0.5,
+    },
+});

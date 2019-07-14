@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {Platform, StyleSheet} from 'react-native';
 import {changeOpacity, makeStyleSheetFromTheme} from 'app/utils/theme';
@@ -13,79 +13,103 @@ export const getMarkdownTextStyles = makeStyleSheetFromTheme((theme) => {
 
     return {
         emph: {
-            fontStyle: 'italic'
+            fontStyle: 'italic',
         },
         strong: {
-            fontWeight: 'bold'
+            fontWeight: 'bold',
         },
         del: {
-            textDecorationLine: 'line-through'
+            textDecorationLine: 'line-through',
         },
         link: {
-            color: theme.linkColor
+            color: theme.linkColor,
         },
         heading1: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading1Text: {
+            paddingBottom: 8,
         },
         heading2: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading2Text: {
+            paddingBottom: 8,
         },
         heading3: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading3Text: {
+            paddingBottom: 8,
         },
         heading4: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading4Text: {
+            paddingBottom: 8,
         },
         heading5: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading5Text: {
+            paddingBottom: 8,
         },
         heading6: {
             fontSize: 17,
             fontWeight: '700',
-            lineHeight: 25
+            lineHeight: 25,
+        },
+        heading6Text: {
+            paddingBottom: 8,
         },
         code: {
             alignSelf: 'center',
             backgroundColor: changeOpacity(theme.centerChannelColor, 0.07),
-            fontFamily: codeFont
+            fontFamily: codeFont,
         },
         codeBlock: {
-            fontFamily: codeFont
+            fontFamily: codeFont,
         },
         mention: {
-            color: theme.linkColor
+            color: theme.linkColor,
         },
         error: {
-            color: theme.errorTextColor
-        }
+            color: theme.errorTextColor,
+        },
+        table_header_row: {
+            fontWeight: '700',
+        },
+        mention_highlight: {
+            backgroundColor: theme.mentionHighlightBg,
+        },
     };
 });
 
 export const getMarkdownBlockStyles = makeStyleSheetFromTheme((theme) => {
     return {
         adjacentParagraph: {
-            marginTop: 6
+            marginTop: 6,
         },
         horizontalRule: {
             backgroundColor: theme.centerChannelColor,
             height: StyleSheet.hairlineWidth,
             flex: 1,
-            marginVertical: 10
+            marginVertical: 10,
         },
         quoteBlockIcon: {
             color: changeOpacity(theme.centerChannelColor, 0.5),
-            padding: 5
-        }
+            padding: 5,
+        },
     };
 });
 
@@ -104,6 +128,7 @@ const languages = {
     diff: 'Diff',
     django: 'Django',
     dockerfile: 'Dockerfile',
+    elixir: 'Elixir',
     erlang: 'Erlang',
     fortran: 'Fortran',
     fsharp: 'F#',
@@ -147,9 +172,13 @@ const languages = {
     vbscript: 'VBScript',
     verilog: 'Verilog',
     xml: 'XML',
-    yaml: 'YAML'
+    yaml: 'YAML',
 };
 
 export function getDisplayNameForLanguage(language) {
     return languages[language.toLowerCase()] || '';
+}
+
+export function escapeRegex(text) {
+    return text.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 }

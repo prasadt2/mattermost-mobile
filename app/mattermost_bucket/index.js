@@ -1,20 +1,20 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {NativeModules, Platform} from 'react-native';
 
 // TODO: Remove platform specific once android is implemented
-const MattermostBucket = Platform.OS === 'ios' ? NativeModules.MattermostBucket : null;
+const MattermostBucket = Platform.OS === 'ios' ? NativeModules.MattermostBucketModule : null;
 
 export default {
-    set: (key, value, groupName) => {
+    setPreference: (key, value) => {
         if (MattermostBucket) {
-            MattermostBucket.set(key, value, groupName);
+            MattermostBucket.setPreference(key, value);
         }
     },
-    get: async (key, groupName) => {
+    getPreference: async (key) => {
         if (MattermostBucket) {
-            const value = await MattermostBucket.get(key, groupName);
+            const value = await MattermostBucket.getPreference(key);
             if (value) {
                 try {
                     return JSON.parse(value);
@@ -26,9 +26,33 @@ export default {
 
         return null;
     },
-    remove: (key, groupName) => {
+    removePreference: (key) => {
         if (MattermostBucket) {
-            MattermostBucket.remove(key, groupName);
+            MattermostBucket.removePreference(key);
         }
-    }
+    },
+    writeToFile: (fileName, content) => {
+        if (MattermostBucket) {
+            MattermostBucket.writeToFile(fileName, content);
+        }
+    },
+    readFromFile: async (fileName) => {
+        if (MattermostBucket) {
+            const value = await MattermostBucket.readFromFile(fileName);
+            if (value) {
+                try {
+                    return JSON.parse(value);
+                } catch (e) {
+                    return value;
+                }
+            }
+        }
+
+        return null;
+    },
+    removeFile: (fileName) => {
+        if (MattermostBucket) {
+            MattermostBucket.removeFile(fileName);
+        }
+    },
 };

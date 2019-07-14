@@ -1,11 +1,12 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
-import {injectIntl, intlShape} from 'react-intl';
+import {intlShape} from 'react-intl';
 import {
     ActivityIndicator,
+    Dimensions,
     Image,
     InteractionManager,
     Keyboard,
@@ -13,104 +14,100 @@ import {
     Text,
     TextInput,
     TouchableWithoutFeedback,
-    View
+    View,
 } from 'react-native';
 import Button from 'react-native-button';
 import {KeyboardAwareScrollView} from 'react-native-keyboard-aware-scroll-view';
-import Orientation from 'react-native-orientation';
 
 import ErrorText from 'app/components/error_text';
 import FormattedText from 'app/components/formatted_text';
 import StatusBar from 'app/components/status_bar';
-import PushNotifications from 'app/push_notifications';
 import {GlobalStyles} from 'app/styles';
-import {wrapWithPreventDoubleTap} from 'app/utils/tap';
+import {preventDoubleTap} from 'app/utils/tap';
 import tracker from 'app/utils/time_tracker';
+import {t} from 'app/utils/i18n';
+import {setMfaPreflightDone, getMfaPreflightDone} from 'app/utils/security';
 
-import logo from 'assets/images/logo.png';
+import telemetry from 'app/telemetry';
 
 import {RequestStatus} from 'mattermost-redux/constants';
 
-class Login extends PureComponent {
+const mfaExpectedErrors = ['mfa.validate_token.authenticate.app_error', 'ent.mfa.validate_token.authenticate.app_error'];
+
+export default class Login extends PureComponent {
     static propTypes = {
-        intl: intlShape.isRequired,
         navigator: PropTypes.object,
         theme: PropTypes.object,
         actions: PropTypes.shape({
             handleLoginIdChanged: PropTypes.func.isRequired,
             handlePasswordChanged: PropTypes.func.isRequired,
             handleSuccessfulLogin: PropTypes.func.isRequired,
-            getSession: PropTypes.func.isRequired,
-            checkMfa: PropTypes.func.isRequired,
-            login: PropTypes.func.isRequired
+            scheduleExpiredNotification: PropTypes.func.isRequired,
+            login: PropTypes.func.isRequired,
         }).isRequired,
         config: PropTypes.object.isRequired,
         license: PropTypes.object.isRequired,
         loginId: PropTypes.string.isRequired,
         password: PropTypes.string.isRequired,
-        checkMfaRequest: PropTypes.object.isRequired,
-        loginRequest: PropTypes.object.isRequired
+        loginRequest: PropTypes.object.isRequired,
+    };
+
+    static contextTypes = {
+        intl: intlShape.isRequired,
     };
 
     constructor(props) {
         super(props);
 
         this.state = {
-            error: null
+            error: null,
         };
     }
 
-    componentWillMount() {
-        Orientation.addOrientationListener(this.orientationDidChange);
+    componentDidMount() {
+        Dimensions.addEventListener('change', this.orientationDidChange);
+        setMfaPreflightDone(false);
     }
 
     componentWillReceiveProps(nextProps) {
         if (this.props.loginRequest.status === RequestStatus.STARTED && nextProps.loginRequest.status === RequestStatus.SUCCESS) {
-            this.props.actions.handleSuccessfulLogin().then(this.props.actions.getSession).then(this.goToLoadTeam);
+            this.props.actions.handleSuccessfulLogin().then(this.goToChannel);
         } else if (this.props.loginRequest.status !== nextProps.loginRequest.status && nextProps.loginRequest.status !== RequestStatus.STARTED) {
             this.setState({isLoading: false});
         }
     }
 
     componentWillUnmount() {
-        Orientation.removeOrientationListener(this.orientationDidChange);
+        Dimensions.removeEventListener('change', this.orientationDidChange);
     }
 
-    goToLoadTeam = (expiresAt) => {
-        const {intl, navigator, theme} = this.props;
+    goToChannel = () => {
+        telemetry.remove(['start:overall']);
+
+        const {navigator} = this.props;
         tracker.initialLoad = Date.now();
 
-        if (expiresAt) {
-            PushNotifications.localNotificationSchedule({
-                date: new Date(expiresAt),
-                message: intl.formatMessage({
-                    id: 'mobile.session_expired',
-                    defaultMessage: 'Session Expired: Please log in to continue receiving notifications.'
-                }),
-                userInfo: {
-                    localNotification: true
-                }
-            });
-        }
+        this.scheduleSessionExpiredNotification();
 
         navigator.resetTo({
-            screen: 'LoadTeam',
+            screen: 'Channel',
             title: '',
             animated: false,
             backButtonTitle: '',
             navigatorStyle: {
+                animated: true,
+                animationType: 'fade',
+                navBarHidden: true,
                 statusBarHidden: false,
                 statusBarHideWithNavBar: false,
-                navBarTextColor: theme.sidebarHeaderTextColor,
-                navBarBackgroundColor: theme.sidebarHeaderBg,
-                navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
-            }
+                screenBackgroundColor: 'transparent',
+            },
         });
     };
 
     goToMfa = () => {
-        const {intl, navigator, theme} = this.props;
+        const {intl} = this.context;
+        const {navigator, theme} = this.props;
 
         this.setState({isLoading: false});
 
@@ -123,8 +120,8 @@ class Login extends PureComponent {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
-            }
+                screenBackgroundColor: theme.centerChannelBg,
+            },
         });
     };
 
@@ -134,11 +131,19 @@ class Login extends PureComponent {
         Keyboard.dismiss();
     };
 
-    preSignIn = wrapWithPreventDoubleTap(() => {
+    preSignIn = preventDoubleTap(() => {
         this.setState({error: null, isLoading: true});
         Keyboard.dismiss();
         InteractionManager.runAfterInteractions(async () => {
             if (!this.props.loginId) {
+                t('login.noEmail');
+                t('login.noEmailLdapUsername');
+                t('login.noEmailUsername');
+                t('login.noEmailUsernameLdapUsername');
+                t('login.noLdapUsername');
+                t('login.noUsername');
+                t('login.noUsernameLdapUsername');
+
                 // it's slightly weird to be constructing the message ID, but it's a bit nicer than triply nested if statements
                 let msgId = 'login.no';
                 if (this.props.config.EnableSignInWithEmail === 'true') {
@@ -152,57 +157,63 @@ class Login extends PureComponent {
                 }
 
                 this.setState({
+                    isLoading: false,
                     error: {
                         intl: {
                             id: msgId,
                             defaultMessage: '',
                             values: {
                                 ldapUsername: this.props.config.LdapLoginFieldName ||
-                                this.props.intl.formatMessage({
+                                this.context.intl.formatMessage({
                                     id: 'login.ldapUsernameLower',
-                                    defaultMessage: 'AD/LDAP username'
-                                })
-                            }
-                        }
-                    }
+                                    defaultMessage: 'AD/LDAP username',
+                                }),
+                            },
+                        },
+                    },
                 });
                 return;
             }
 
             if (!this.props.password) {
                 this.setState({
+                    isLoading: false,
                     error: {
                         intl: {
-                            id: 'login.noPassword',
-                            defaultMessage: 'Please enter your password'
-                        }
-                    }
+                            id: t('login.noPassword'),
+                            defaultMessage: 'Please enter your password',
+                        },
+                    },
                 });
                 return;
             }
 
-            if (this.props.config.EnableMultifactorAuthentication === 'true') {
-                const result = await this.props.actions.checkMfa(this.props.loginId);
-                if (result.data) {
-                    this.goToMfa();
-                } else {
-                    this.signIn();
-                }
-            } else {
-                this.signIn();
-            }
+            this.signIn();
         });
     });
+
+    scheduleSessionExpiredNotification = () => {
+        const {intl} = this.context;
+        const {actions} = this.props;
+
+        actions.scheduleExpiredNotification(intl);
+    };
 
     signIn = () => {
         const {actions, loginId, loginRequest, password} = this.props;
         if (loginRequest.status !== RequestStatus.STARTED) {
-            actions.login(loginId.toLowerCase(), password);
+            actions.login(loginId.toLowerCase(), password).then(this.checkLoginResponse);
+        }
+    };
+
+    checkLoginResponse = (data) => {
+        if (mfaExpectedErrors.includes(data?.error?.server_error_id)) { // eslint-disable-line camelcase
+            this.goToMfa();
         }
     };
 
     createLoginPlaceholder() {
-        const {formatMessage} = this.props.intl;
+        const {formatMessage} = this.context.intl;
         const license = this.props.license;
         const config = this.props.config;
 
@@ -237,7 +248,6 @@ class Login extends PureComponent {
     getLoginErrorMessage = () => {
         return (
             this.getServerErrorForLogin() ||
-            this.props.checkMfaRequest.error ||
             this.state.error
         );
     };
@@ -251,15 +261,18 @@ class Login extends PureComponent {
         if (!errorId) {
             return error.message;
         }
+        if (mfaExpectedErrors.includes(errorId) && !getMfaPreflightDone()) {
+            return null;
+        }
         if (
             errorId === 'store.sql_user.get_for_login.app_error' ||
             errorId === 'ent.ldap.do_login.user_not_registered.app_error'
         ) {
             return {
                 intl: {
-                    id: 'login.userNotFound',
-                    defaultMessage: "We couldn't find an account matching your login credentials."
-                }
+                    id: t('login.userNotFound'),
+                    defaultMessage: "We couldn't find an account matching your login credentials.",
+                },
             };
         } else if (
             errorId === 'api.user.check_user_password.invalid.app_error' ||
@@ -267,9 +280,9 @@ class Login extends PureComponent {
         ) {
             return {
                 intl: {
-                    id: 'login.invalidPassword',
-                    defaultMessage: 'Your password is incorrect.'
-                }
+                    id: t('login.invalidPassword'),
+                    defaultMessage: 'Your password is incorrect.',
+                },
             };
         }
         return error.message;
@@ -294,6 +307,23 @@ class Login extends PureComponent {
     scrollRef = (ref) => {
         this.scroll = ref;
     };
+
+    forgotPassword = () => {
+        const {intl} = this.context;
+        const {navigator, theme} = this.props;
+        navigator.push({
+            screen: 'ForgotPassword',
+            title: intl.formatMessage({id: 'password_form.title', defaultMessage: 'Password Reset'}),
+            animated: true,
+            backButtonTitle: '',
+            navigatorStyle: {
+                navBarTextColor: theme.sidebarHeaderTextColor,
+                navBarBackgroundColor: theme.sidebarHeaderBg,
+                navBarButtonColor: theme.sidebarHeaderTextColor,
+                screenBackgroundColor: theme.centerChannelBg,
+            },
+        });
+    }
 
     render() {
         const isLoading = this.props.loginRequest.status === RequestStatus.STARTED || this.state.isLoading;
@@ -334,6 +364,22 @@ class Login extends PureComponent {
             );
         }
 
+        let forgotPassword;
+        if (this.props.config.EnableSignInWithEmail === 'true' || this.props.config.EnableSignInWithUsername === 'true') {
+            forgotPassword = (
+                <Button
+                    onPress={this.forgotPassword}
+                    containerStyle={[style.forgotPasswordBtn]}
+                >
+                    <FormattedText
+                        id='login.forgot'
+                        defaultMessage='I forgot my password'
+                        style={style.forgotPasswordTxt}
+                    />
+                </Button>
+            );
+        }
+
         return (
             <View style={style.container}>
                 <StatusBar/>
@@ -346,7 +392,7 @@ class Login extends PureComponent {
                         enableOnAndroid={true}
                     >
                         <Image
-                            source={logo}
+                            source={require('assets/images/logo.png')}
                         />
                         <View>
                             <Text style={GlobalStyles.header}>
@@ -379,7 +425,7 @@ class Login extends PureComponent {
                             value={this.props.password}
                             onChangeText={this.props.actions.handlePasswordChanged}
                             style={GlobalStyles.inputBox}
-                            placeholder={this.props.intl.formatMessage({id: 'login.password', defaultMessage: 'Password'})}
+                            placeholder={this.context.intl.formatMessage({id: 'login.password', defaultMessage: 'Password'})}
                             secureTextEntry={true}
                             autoCorrect={false}
                             autoCapitalize='none'
@@ -389,6 +435,7 @@ class Login extends PureComponent {
                             disableFullscreenUI={true}
                         />
                         {proceed}
+                        {forgotPassword}
                     </KeyboardAwareScrollView>
                 </TouchableWithoutFeedback>
             </View>
@@ -399,15 +446,20 @@ class Login extends PureComponent {
 const style = StyleSheet.create({
     container: {
         backgroundColor: '#FFFFFF',
-        flex: 1
+        flex: 1,
     },
     innerContainer: {
         alignItems: 'center',
         flexDirection: 'column',
         justifyContent: 'center',
         paddingHorizontal: 15,
-        paddingVertical: 50
-    }
+        paddingVertical: 50,
+    },
+    forgotPasswordBtn: {
+        borderColor: 'transparent',
+        marginTop: 15,
+    },
+    forgotPasswordTxt: {
+        color: '#2389D7',
+    },
 });
-
-export default injectIntl(Login);

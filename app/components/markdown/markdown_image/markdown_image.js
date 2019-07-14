@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import PropTypes from 'prop-types';
 import React from 'react';
@@ -12,65 +12,80 @@ import {
     StyleSheet,
     Text,
     TouchableHighlight,
-    View
+    View,
 } from 'react-native';
 
 import FormattedText from 'app/components/formatted_text';
-
+import ProgressiveImage from 'app/components/progressive_image';
 import CustomPropTypes from 'app/constants/custom_prop_types';
 import mattermostManaged from 'app/mattermost_managed';
+import BottomSheet from 'app/utils/bottom_sheet';
+import ImageCacheManager from 'app/utils/image_cache_manager';
+import {previewImageAtIndex, calculateDimensions, isGifTooLarge} from 'app/utils/images';
 import {normalizeProtocol} from 'app/utils/url';
 
-const MAX_IMAGE_HEIGHT = 150;
+import brokenImageIcon from 'assets/images/icons/brokenimage.png';
 
 const ANDROID_MAX_HEIGHT = 4096;
 const ANDROID_MAX_WIDTH = 4096;
+const VIEWPORT_IMAGE_OFFSET = 66;
+const VIEWPORT_IMAGE_REPLY_OFFSET = 13;
 
 export default class MarkdownImage extends React.Component {
     static propTypes = {
         children: PropTypes.node,
+        deviceHeight: PropTypes.number.isRequired,
+        deviceWidth: PropTypes.number.isRequired,
+        imagesMetadata: PropTypes.object,
         linkDestination: PropTypes.string,
-        onLongPress: PropTypes.func,
+        isReplyPost: PropTypes.bool,
+        navigator: PropTypes.object.isRequired,
         serverURL: PropTypes.string.isRequired,
         source: PropTypes.string.isRequired,
-        errorTextStyle: CustomPropTypes.Style
+        errorTextStyle: CustomPropTypes.Style,
     };
 
     static contextTypes = {
-        intl: intlShape.isRequired
+        intl: intlShape.isRequired,
     };
 
     constructor(props) {
         super(props);
 
+        const dimensions = props.imagesMetadata?.[props.source];
         this.state = {
-            width: 0,
-            height: 0,
-            maxWidth: Math.MAX_INT,
-            failed: false
+            originalHeight: dimensions?.height || 0,
+            originalWidth: dimensions?.width || 0,
+            failed: false,
+            uri: null,
         };
 
         this.mounted = false;
     }
 
-    componentWillMount() {
-        this.loadImageSize(this.getSource());
-    }
-
     componentDidMount() {
         this.mounted = true;
+
+        ImageCacheManager.cache(null, this.getSource(), this.setImageUrl);
     }
 
-    componentWillReceiveProps(nextProps) {
-        if (this.props.source !== nextProps.source) {
-            this.setState({
-                width: 0,
-                height: 0,
-                failed: false
-            });
+    static getDerivedStateFromProps(props) {
+        const imageMetadata = props.imagesMetadata?.[props.source];
 
+        if (imageMetadata) {
+            return {
+                originalHeight: imageMetadata.height,
+                originalWidth: imageMetadata.width,
+            };
+        }
+
+        return null;
+    }
+
+    componentDidUpdate(prevProps) {
+        if (this.props.source !== prevProps.source) {
             // getSource also depends on serverURL, but that shouldn't change while this is mounted
-            this.loadImageSize(this.getSource(nextProps));
+            ImageCacheManager.cache(null, this.getSource(), this.setImageUrl);
         }
     }
 
@@ -78,18 +93,20 @@ export default class MarkdownImage extends React.Component {
         this.mounted = false;
     }
 
-    getSource = (props = this.props) => {
-        let source = props.source;
+    getSource = () => {
+        let source = this.props.source;
 
         if (source.startsWith('/')) {
-            source = props.serverURL + '/' + source;
+            source = this.props.serverURL + '/' + source;
         }
 
         return source;
     };
 
-    loadImageSize = (source) => {
-        Image.getSize(source, this.handleSizeReceived, this.handleSizeFailed);
+    getViewPortWidth = () => {
+        const {deviceHeight, deviceWidth, isReplyPost} = this.props;
+        const deviceSize = deviceWidth > deviceHeight ? deviceHeight : deviceWidth;
+        return deviceSize - VIEWPORT_IMAGE_OFFSET - (isReplyPost ? VIEWPORT_IMAGE_REPLY_OFFSET : 0);
     };
 
     handleSizeReceived = (width, height) => {
@@ -97,9 +114,15 @@ export default class MarkdownImage extends React.Component {
             return;
         }
 
+        if (!width || !height) {
+            this.setState({failed: true});
+            return;
+        }
+
         this.setState({
-            width,
-            height
+            failed: false,
+            originalHeight: height,
+            originalWidth: width,
         });
     };
 
@@ -109,17 +132,7 @@ export default class MarkdownImage extends React.Component {
         }
 
         this.setState({
-            failed: true
-        });
-    };
-
-    handleLayout = (event) => {
-        if (!this.mounted) {
-            return;
-        }
-
-        this.setState({
-            maxWidth: event.nativeEvent.layout.width
+            failed: true,
         });
     };
 
@@ -136,29 +149,78 @@ export default class MarkdownImage extends React.Component {
     handleLinkLongPress = async () => {
         const {formatMessage} = this.context.intl;
 
-        const config = await mattermostManaged.getLocalConfig();
+        const config = mattermostManaged.getCachedConfig();
 
-        let action;
-        if (config.copyAndPasteProtection !== 'true') {
-            action = {
-                text: formatMessage({id: 'mobile.markdown.link.copy_url', defaultMessage: 'Copy URL'}),
-                onPress: this.handleLinkCopy
-            };
+        if (config?.copyAndPasteProtection !== 'true') {
+            const cancelText = formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'});
+            const actionText = formatMessage({id: 'mobile.markdown.link.copy_url', defaultMessage: 'Copy URL'});
+            BottomSheet.showBottomSheetWithOptions({
+                options: [actionText, cancelText],
+                cancelButtonIndex: 1,
+            }, (value) => {
+                if (value !== 1) {
+                    this.handleLinkCopy();
+                }
+            });
         }
-
-        this.props.onLongPress(action);
     };
 
     handleLinkCopy = () => {
-        Clipboard.setString(this.props.linkDestination);
+        Clipboard.setString(this.props.linkDestination || this.props.source);
+    };
+
+    handlePreviewImage = () => {
+        const {
+            originalHeight,
+            originalWidth,
+            uri,
+        } = this.state;
+        const link = this.getSource();
+        let filename = link.substring(link.lastIndexOf('/') + 1, link.indexOf('?') === -1 ? link.length : link.indexOf('?'));
+        const extension = filename.split('.').pop();
+
+        if (extension === filename) {
+            const ext = filename.indexOf('.') === -1 ? '.png' : filename.substring(filename.lastIndexOf('.'));
+            filename = `${filename}${ext}`;
+        }
+
+        const files = [{
+            caption: filename,
+            dimensions: {
+                width: originalWidth,
+                height: originalHeight,
+            },
+            source: {uri},
+            data: {
+                localPath: uri,
+            },
+        }];
+        previewImageAtIndex(this.props.navigator, [this.refs.item], 0, files);
+    };
+
+    loadImageSize = (source) => {
+        if (!this.state.originalWidth) {
+            Image.getSize(source, this.handleSizeReceived, this.handleSizeFailed);
+        }
+    };
+
+    setImageUrl = (imageURL) => {
+        const uri = imageURL;
+
+        this.setState({uri});
+        this.loadImageSize(uri);
     };
 
     render() {
+        if (isGifTooLarge(this.props.imagesMetadata?.[this.props.source])) {
+            return null;
+        }
+
         let image = null;
+        const {originalHeight, originalWidth, uri} = this.state;
+        const {height, width} = calculateDimensions(originalHeight, originalWidth, this.getViewPortWidth());
 
-        if (this.state.width && this.state.height && this.state.maxWidth) {
-            let {width, height} = this.state;
-
+        if (width && height) {
             if (Platform.OS === 'android' && (width > ANDROID_MAX_WIDTH || height > ANDROID_MAX_HEIGHT)) {
                 // Android has a cap on the max image size that can be displayed
 
@@ -169,7 +231,7 @@ export default class MarkdownImage extends React.Component {
                             defaultMessage='Image exceeds max dimensions of {maxWidth} by {maxHeight}:'
                             values={{
                                 maxWidth: ANDROID_MAX_WIDTH,
-                                maxHeight: ANDROID_MAX_HEIGHT
+                                maxHeight: ANDROID_MAX_HEIGHT,
                             }}
                         />
                         {' '}
@@ -177,37 +239,33 @@ export default class MarkdownImage extends React.Component {
                     </Text>
                 );
             } else {
-                const maxWidth = this.state.maxWidth;
-                if (width > maxWidth) {
-                    height = height * (maxWidth / width);
-                    width = maxWidth;
-                }
-
-                const maxHeight = MAX_IMAGE_HEIGHT;
-                if (height > maxHeight) {
-                    width = width * (maxHeight / height);
-                    height = maxHeight;
-                }
-
                 // React Native complains if we try to pass resizeMode as a style
+                let source = null;
+                if (uri) {
+                    source = {uri};
+                }
+
                 image = (
-                    <Image
-                        source={{uri: this.getSource()}}
-                        resizeMode='contain'
-                        style={[{width, height}, style.image]}
-                    />
+                    <TouchableHighlight
+                        onLongPress={this.handleLinkLongPress}
+                        onPress={this.handlePreviewImage}
+                        style={{width, height}}
+                    >
+                        <ProgressiveImage
+                            ref='image'
+                            defaultSource={source}
+                            resizeMode='contain'
+                            style={{width, height}}
+                        />
+                    </TouchableHighlight>
                 );
             }
         } else if (this.state.failed) {
             image = (
-                <Text style={this.props.errorTextStyle}>
-                    <FormattedText
-                        id='mobile.markdown.image.error'
-                        defaultMessage='Image failed to load:'
-                    />
-                    {' '}
-                    {this.props.children}
-                </Text>
+                <Image
+                    source={brokenImageIcon}
+                    style={style.brokenImageIcon}
+                />
             );
         }
 
@@ -224,8 +282,8 @@ export default class MarkdownImage extends React.Component {
 
         return (
             <View
+                ref='item'
                 style={style.container}
-                onLayout={this.handleLayout}
             >
                 {image}
             </View>
@@ -235,9 +293,10 @@ export default class MarkdownImage extends React.Component {
 
 const style = StyleSheet.create({
     container: {
-        flex: 1
+        marginBottom: 5,
     },
-    image: {
-        marginVertical: 5
-    }
+    brokenImageIcon: {
+        width: 24,
+        height: 24,
+    },
 });

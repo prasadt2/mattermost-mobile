@@ -1,5 +1,5 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -11,19 +11,19 @@ import {GlobalStyles} from 'app/styles';
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        flexDirection: 'row'
+        flexDirection: 'row',
     },
 
     loading: {
-        marginLeft: 3
-    }
+        marginLeft: 3,
+    },
 });
 
 export default class Button extends PureComponent {
     static propTypes = {
         children: PropTypes.node,
         loading: PropTypes.bool,
-        onPress: PropTypes.func.isRequired
+        onPress: PropTypes.func.isRequired,
     };
 
     onPress = () => {

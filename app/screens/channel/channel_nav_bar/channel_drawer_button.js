@@ -1,27 +1,25 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {connect} from 'react-redux';
 import {
-    PanResponder,
-    Platform,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 
 import Icon from 'react-native-vector-icons/Ionicons';
 
 import Badge from 'app/components/badge';
-import PushNotifications from 'app/push_notifications';
 import {getTheme} from 'mattermost-redux/selectors/entities/preferences';
-import {wrapWithPreventDoubleTap} from 'app/utils/tap';
+import {preventDoubleTap} from 'app/utils/tap';
 import {makeStyleSheetFromTheme} from 'app/utils/theme';
+
+import telemetry from 'app/telemetry';
 
 import {getUnreadsInCurrentTeam} from 'mattermost-redux/selectors/entities/channels';
 import {getCurrentTeamId, getTeamMemberships} from 'mattermost-redux/selectors/entities/teams';
-import EventEmitter from 'mattermost-redux/utils/event_emitter';
 
 class ChannelDrawerButton extends PureComponent {
     static propTypes = {
@@ -30,52 +28,20 @@ class ChannelDrawerButton extends PureComponent {
         messageCount: PropTypes.number,
         mentionCount: PropTypes.number,
         myTeamMembers: PropTypes.object,
-        theme: PropTypes.object
+        theme: PropTypes.object,
+        visible: PropTypes.bool,
     };
 
     static defaultProps = {
         currentChannel: {},
         theme: {},
         messageCount: 0,
-        mentionCount: 0
+        mentionCount: 0,
+        visible: true,
     };
 
-    constructor(props) {
-        super(props);
-
-        this.state = {
-            opacity: 1
-        };
-    }
-
-    componentWillMount() {
-        this.panResponder = PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onStartShouldSetResponderCapture: () => true,
-            onMoveShouldSetResponderCapture: () => true,
-            onResponderMove: () => false
-        });
-    }
-
-    componentDidMount() {
-        EventEmitter.on('drawer_opacity', this.setOpacity);
-        PushNotifications.setApplicationIconBadgeNumber(this.props.mentionCount);
-    }
-
-    componentWillReceiveProps(nextProps) {
-        PushNotifications.setApplicationIconBadgeNumber(nextProps.mentionCount);
-    }
-
-    componentWillUnmount() {
-        EventEmitter.off('drawer_opacity', this.setOpacity);
-    }
-
-    setOpacity = (value) => {
-        this.setState({opacity: value > 0 ? 0.1 : 1});
-    };
-
-    handlePress = wrapWithPreventDoubleTap(() => {
+    handlePress = preventDoubleTap(() => {
+        telemetry.start(['channel:open_drawer']);
         this.props.openDrawer();
     });
 
@@ -85,8 +51,10 @@ class ChannelDrawerButton extends PureComponent {
             mentionCount,
             messageCount,
             myTeamMembers,
-            theme
+            theme,
+            visible,
         } = this.props;
+
         const style = getStyleFromTheme(theme);
 
         let mentions = mentionCount;
@@ -94,8 +62,8 @@ class ChannelDrawerButton extends PureComponent {
 
         const members = Object.values(myTeamMembers).filter((m) => m.team_id !== currentTeamId);
         members.forEach((m) => {
-            mentions = mentions + (m.mention_count || 0);
-            messages = messages + (m.msg_count || 0);
+            mentions += (m.mention_count || 0);
+            messages += (m.msg_count || 0);
         });
 
         let badgeCount = 0;
@@ -106,36 +74,43 @@ class ChannelDrawerButton extends PureComponent {
         }
 
         let badge;
-        if (badgeCount) {
+        if (badgeCount && visible) {
             badge = (
                 <Badge
                     style={style.badge}
                     countStyle={style.mention}
                     count={badgeCount}
-                    minHeight={20}
-                    minWidth={20}
                     onPress={this.handlePress}
                 />
             );
         }
 
-        const icon = (
-            <Icon
-                name='md-menu'
-                size={25}
-                color={theme.sidebarHeaderTextColor}
-            />
-        );
+        let icon;
+        let containerStyle;
+        if (visible) {
+            icon = (
+                <Icon
+                    name='md-menu'
+                    size={25}
+                    color={theme.sidebarHeaderTextColor}
+                />
+            );
+            containerStyle = style.container;
+        } else {
+            icon = (<View style={style.tabletIcon}/>);
+            containerStyle = style.tabletContainer;
+        }
 
         return (
             <TouchableOpacity
-                {...this.panResponder.panHandlers}
                 onPress={this.handlePress}
-                style={style.container}
+                style={containerStyle}
             >
-                <View style={[style.wrapper, {opacity: this.state.opacity}]}>
-                    {icon}
-                    {badge}
+                <View style={[style.wrapper]}>
+                    <View>
+                        {icon}
+                        {badge}
+                    </View>
                 </View>
             </TouchableOpacity>
         );
@@ -145,38 +120,36 @@ class ChannelDrawerButton extends PureComponent {
 const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
-            width: 55
+            width: 55,
+        },
+        tabletContainer: {
+            width: 10,
+        },
+        tabletIcon: {
+            height: 25,
         },
         wrapper: {
             alignItems: 'center',
             flex: 1,
             flexDirection: 'column',
             justifyContent: 'center',
-            paddingHorizontal: 10
+            paddingHorizontal: 10,
         },
         badge: {
-            backgroundColor: theme.mentionBj,
+            backgroundColor: theme.mentionBg,
             borderColor: theme.sidebarHeaderBg,
             borderRadius: 10,
             borderWidth: 1,
-            flexDirection: 'row',
-            left: 3,
+            left: -13,
             padding: 3,
             position: 'absolute',
             right: 0,
-            ...Platform.select({
-                android: {
-                    top: 10
-                },
-                ios: {
-                    top: 5
-                }
-            })
+            top: -4,
         },
         mention: {
             color: theme.mentionColor,
-            fontSize: 10
-        }
+            fontSize: 10,
+        },
     };
 });
 
@@ -185,7 +158,7 @@ function mapStateToProps(state) {
         currentTeamId: getCurrentTeamId(state),
         myTeamMembers: getTeamMemberships(state),
         theme: getTheme(state),
-        ...getUnreadsInCurrentTeam(state)
+        ...getUnreadsInCurrentTeam(state),
     };
 }
 

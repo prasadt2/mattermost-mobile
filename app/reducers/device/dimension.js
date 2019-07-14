@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {Dimensions} from 'react-native';
 
@@ -9,7 +9,7 @@ import {DeviceTypes} from 'app/constants';
 const {height, width} = Dimensions.get('window');
 const initialState = {
     deviceHeight: height,
-    deviceWidth: width
+    deviceWidth: width,
 };
 
 export default function dimension(state = initialState, action) {

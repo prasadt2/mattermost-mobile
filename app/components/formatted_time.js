@@ -1,30 +1,49 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import {injectIntl, intlShape} from 'react-intl';
+import {intlShape} from 'react-intl';
 import {Text} from 'react-native';
+import moment from 'moment-timezone';
 
-class FormattedTime extends React.PureComponent {
+export default class FormattedTime extends React.PureComponent {
     static propTypes = {
-        intl: intlShape.isRequired,
         value: PropTypes.any.isRequired,
-        format: PropTypes.string,
-        children: PropTypes.func
+        timeZone: PropTypes.string,
+        children: PropTypes.func,
+        hour12: PropTypes.bool,
+    };
+
+    static contextTypes = {
+        intl: intlShape.isRequired,
+    };
+
+    getFormattedTime = () => {
+        const {intl} = this.context;
+
+        const {
+            value,
+            timeZone,
+            hour12,
+        } = this.props;
+
+        if (timeZone) {
+            const format = hour12 ? 'hh:mm A' : 'HH:mm';
+            return moment.tz(value, timeZone).format(format);
+        }
+
+        // If no timezone is defined fallback to the previous implementation
+        return intl.formatDate(new Date(value), {
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12,
+        });
     };
 
     render() {
-        const {
-            intl,
-            value,
-            children,
-            ...props
-        } = this.props;
-
-        Reflect.deleteProperty(props, 'format');
-
-        const formattedTime = intl.formatDate(value, {...props, hour: 'numeric', minute: 'numeric'});
+        const {children} = this.props;
+        const formattedTime = this.getFormattedTime();
 
         if (typeof children === 'function') {
             return children(formattedTime);
@@ -33,5 +52,3 @@ class FormattedTime extends React.PureComponent {
         return <Text>{formattedTime}</Text>;
     }
 }
-
-export default injectIntl(FormattedTime);

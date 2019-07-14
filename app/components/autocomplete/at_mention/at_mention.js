@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -13,11 +13,12 @@ import AutocompleteDivider from 'app/components/autocomplete/autocomplete_divide
 import AutocompleteSectionHeader from 'app/components/autocomplete/autocomplete_section_header';
 import SpecialMentionItem from 'app/components/autocomplete/special_mention_item';
 import {makeStyleSheetFromTheme} from 'app/utils/theme';
+import {t} from 'app/utils/i18n';
 
 export default class AtMention extends PureComponent {
     static propTypes = {
         actions: PropTypes.shape({
-            autocompleteUsers: PropTypes.func.isRequired
+            autocompleteUsers: PropTypes.func.isRequired,
         }).isRequired,
         currentChannelId: PropTypes.string,
         currentTeamId: PropTypes.string.isRequired,
@@ -25,28 +26,29 @@ export default class AtMention extends PureComponent {
         defaultChannel: PropTypes.object,
         inChannel: PropTypes.array,
         isSearch: PropTypes.bool,
-        listHeight: PropTypes.number,
         matchTerm: PropTypes.string,
+        maxListHeight: PropTypes.number,
         onChangeText: PropTypes.func.isRequired,
         onResultCountChange: PropTypes.func.isRequired,
         outChannel: PropTypes.array,
         requestStatus: PropTypes.string.isRequired,
         teamMembers: PropTypes.array,
         theme: PropTypes.object.isRequired,
-        value: PropTypes.string
+        value: PropTypes.string,
     };
 
     static defaultProps = {
         defaultChannel: {},
         isSearch: false,
-        value: ''
+        value: '',
+        inChannel: [],
     };
 
     constructor(props) {
         super(props);
 
         this.state = {
-            sections: []
+            sections: [],
         };
     }
 
@@ -56,7 +58,7 @@ export default class AtMention extends PureComponent {
             // if the term changes but is null or the mention has been completed we render this component as null
             this.setState({
                 mentionComplete: false,
-                sections: []
+                sections: [],
             });
 
             this.props.onResultCountChange(0);
@@ -81,43 +83,43 @@ export default class AtMention extends PureComponent {
             const sections = [];
             if (isSearch) {
                 sections.push({
-                    id: 'mobile.suggestion.members',
+                    id: t('mobile.suggestion.members'),
                     defaultMessage: 'Members',
                     data: teamMembers,
-                    key: 'teamMembers'
+                    key: 'teamMembers',
                 });
             } else {
                 if (inChannel.length) {
                     sections.push({
-                        id: 'suggestion.mention.members',
+                        id: t('suggestion.mention.members'),
                         defaultMessage: 'Channel Members',
                         data: inChannel,
-                        key: 'inChannel'
+                        key: 'inChannel',
                     });
                 }
 
                 if (this.checkSpecialMentions(matchTerm)) {
                     sections.push({
-                        id: 'suggestion.mention.special',
+                        id: t('suggestion.mention.special'),
                         defaultMessage: 'Special Mentions',
                         data: this.getSpecialMentions(),
                         key: 'special',
-                        renderItem: this.renderSpecialMentions
+                        renderItem: this.renderSpecialMentions,
                     });
                 }
 
                 if (outChannel.length) {
                     sections.push({
-                        id: 'suggestion.mention.nonmembers',
+                        id: t('suggestion.mention.nonmembers'),
                         defaultMessage: 'Not in Channel',
                         data: outChannel,
-                        key: 'outChannel'
+                        key: 'outChannel',
                     });
                 }
             }
 
             this.setState({
-                sections
+                sections,
             });
 
             this.props.onResultCountChange(sections.reduce((total, section) => total + section.data.length, 0));
@@ -131,19 +133,19 @@ export default class AtMention extends PureComponent {
     getSpecialMentions = () => {
         return [{
             completeHandle: 'all',
-            id: 'suggestion.mention.all',
-            defaultMessage: 'Notifies everyone in the channel, use in {townsquare} to notify the whole team',
+            id: t('suggestion.mention.all'),
+            defaultMessage: 'Notifies everyone in this channel',
             values: {
-                townsquare: this.props.defaultChannel.display_name
-            }
+                townsquare: this.props.defaultChannel.display_name,
+            },
         }, {
             completeHandle: 'channel',
-            id: 'suggestion.mention.channel',
-            defaultMessage: 'Notifies everyone in the channel'
+            id: t('suggestion.mention.channel'),
+            defaultMessage: 'Notifies everyone in this channel',
         }, {
             completeHandle: 'here',
-            id: 'suggestion.mention.here',
-            defaultMessage: 'Notifies everyone in the channel and online'
+            id: t('suggestion.mention.here'),
+            defaultMessage: 'Notifies everyone online in this channel',
         }];
     };
 
@@ -166,7 +168,7 @@ export default class AtMention extends PureComponent {
             completedDraft += value.substring(cursorPosition);
         }
 
-        onChangeText(completedDraft, true);
+        onChangeText(completedDraft);
         this.setState({mentionComplete: true});
     };
 
@@ -203,7 +205,7 @@ export default class AtMention extends PureComponent {
     };
 
     render() {
-        const {isSearch, listHeight, theme} = this.props;
+        const {maxListHeight, theme} = this.props;
         const {mentionComplete, sections} = this.state;
 
         if (sections.length === 0 || mentionComplete) {
@@ -218,7 +220,7 @@ export default class AtMention extends PureComponent {
             <SectionList
                 keyboardShouldPersistTaps='always'
                 keyExtractor={this.keyExtractor}
-                style={[style.listView, isSearch ? [style.search, {height: listHeight}] : null]}
+                style={[style.listView, {maxHeight: maxListHeight}]}
                 sections={sections}
                 renderItem={this.renderItem}
                 renderSectionHeader={this.renderSectionHeader}
@@ -232,10 +234,7 @@ export default class AtMention extends PureComponent {
 const getStyleFromTheme = makeStyleSheetFromTheme((theme) => {
     return {
         listView: {
-            backgroundColor: theme.centerChannelBg
+            backgroundColor: theme.centerChannelBg,
         },
-        search: {
-            minHeight: 125
-        }
     };
 });

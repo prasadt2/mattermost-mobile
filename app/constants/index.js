@@ -1,16 +1,19 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
+import DeepLinkTypes from './deep_linking';
 import DeviceTypes from './device';
 import ListTypes from './list';
 import NavigationTypes from './navigation';
 import PermissionTypes from './permissions';
-import ViewTypes from './view';
+import ViewTypes, {UpgradeTypes} from './view';
 
 export {
+    DeepLinkTypes,
     DeviceTypes,
     ListTypes,
     NavigationTypes,
     PermissionTypes,
-    ViewTypes
+    UpgradeTypes,
+    ViewTypes,
 };

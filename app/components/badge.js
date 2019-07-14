@@ -1,5 +1,5 @@
-// Copyright (c) 2016-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
@@ -9,14 +9,14 @@ import {
     Text,
     TouchableWithoutFeedback,
     View,
-    ViewPropTypes
+    ViewPropTypes,
 } from 'react-native';
 
 export default class Badge extends PureComponent {
     static defaultProps = {
         extraPaddingHorizontal: 10,
-        minHeight: 0,
-        minWidth: 0
+        minHeight: 20,
+        minWidth: 20,
     };
 
     static propTypes = {
@@ -26,7 +26,7 @@ export default class Badge extends PureComponent {
         countStyle: Text.propTypes.style,
         minHeight: PropTypes.number,
         minWidth: PropTypes.number,
-        onPress: PropTypes.func
+        onPress: PropTypes.func,
     };
 
     constructor(props) {
@@ -42,7 +42,7 @@ export default class Badge extends PureComponent {
             onMoveShouldSetPanResponder: () => true,
             onStartShouldSetResponderCapture: () => true,
             onMoveShouldSetResponderCapture: () => true,
-            onResponderMove: () => false
+            onResponderMove: () => false,
         });
     }
 
@@ -81,14 +81,14 @@ export default class Badge extends PureComponent {
             } else {
                 width = e.nativeEvent.layout.width + this.props.extraPaddingHorizontal;
             }
-            width = Math.max(width + 10, this.props.minWidth);
+            width = Math.max(this.props.count < 10 ? width : width + 10, this.props.minWidth);
             const borderRadius = width / 2;
             this.setNativeProps({
                 style: {
                     width,
                     borderRadius,
-                    opacity: 1
-                }
+                    opacity: 1,
+                },
             });
             this.layoutReady = true;
         }
@@ -96,21 +96,41 @@ export default class Badge extends PureComponent {
 
     renderText = () => {
         const {count} = this.props;
-        let text = count.toString();
-        const extra = {};
+        let unreadCount = null;
+        let unreadIndicator = null;
         if (count < 0) {
-            text = '•';
-
-            //the extra margin is to align to the center?
-            extra.marginBottom = 1;
+            unreadIndicator = (
+                <View
+                    style={[styles.text, this.props.countStyle]}
+                    onLayout={this.onLayout}
+                >
+                    <View style={styles.verticalAlign}>
+                        <View style={[styles.unreadIndicator, {backgroundColor: this.props.countStyle.color}]}/>
+                    </View>
+                </View>
+            );
+        } else {
+            unreadCount = (
+                <View style={styles.verticalAlign}>
+                    <Text
+                        style={[styles.text, this.props.countStyle]}
+                        onLayout={this.onLayout}
+                    >
+                        {count.toString()}
+                    </Text>
+                </View>
+            );
         }
         return (
-            <Text
-                style={[styles.text, this.props.countStyle, extra]}
-                onLayout={this.onLayout}
+            <View
+                ref='badgeContainer'
+                style={[styles.badge, this.props.style, {opacity: 0}]}
             >
-                {text}
-            </Text>
+                <View style={styles.wrapper}>
+                    {unreadCount}
+                    {unreadIndicator}
+                </View>
+            </View>
         );
     };
 
@@ -124,14 +144,7 @@ export default class Badge extends PureComponent {
                 {...this.panResponder.panHandlers}
                 onPress={this.handlePress}
             >
-                <View
-                    ref='badgeContainer'
-                    style={[styles.badge, this.props.style, {opacity: 0}]}
-                >
-                    <View style={styles.wrapper}>
-                        {this.renderText()}
-                    </View>
-                </View>
+                {this.renderText()}
             </TouchableWithoutFeedback>
         );
     }
@@ -147,15 +160,29 @@ const styles = StyleSheet.create({
         paddingBottom: 3,
         position: 'absolute',
         right: 30,
-        top: 2
+        top: 2,
     },
     wrapper: {
-        alignItems: 'center',
         flex: 1,
-        justifyContent: 'center'
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
     },
     text: {
         fontSize: 14,
-        color: 'white'
-    }
+        color: 'white',
+    },
+    unreadIndicator: {
+        height: 4,
+        width: 4,
+        backgroundColor: '#444',
+        borderRadius: 4,
+    },
+    verticalAlign: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        textAlignVertical: 'center',
+    },
 });

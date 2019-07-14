@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {ViewTypes} from 'app/constants';
 
@@ -8,7 +8,7 @@ export function handleCommentDraftChanged(rootId, draft) {
         dispatch({
             type: ViewTypes.COMMENT_DRAFT_CHANGED,
             rootId,
-            draft
+            draft,
         }, getState);
     };
 }
@@ -17,6 +17,6 @@ export function handleCommentDraftSelectionChanged(rootId, cursorPosition) {
     return {
         type: ViewTypes.COMMENT_DRAFT_SELECTION_CHANGED,
         rootId,
-        cursorPosition
+        cursorPosition,
     };
 }

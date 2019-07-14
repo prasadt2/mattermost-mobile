@@ -1,17 +1,17 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {injectIntl, intlShape} from 'react-intl';
 import {
+    Dimensions,
     Image,
     ScrollView,
     StyleSheet,
-    Text
+    Text,
 } from 'react-native';
 import Button from 'react-native-button';
-import Orientation from 'react-native-orientation';
 
 import {ViewTypes} from 'app/constants';
 import FormattedText from 'app/components/formatted_text';
@@ -29,18 +29,18 @@ class LoginOptions extends PureComponent {
         navigator: PropTypes.object,
         config: PropTypes.object.isRequired,
         license: PropTypes.object.isRequired,
-        theme: PropTypes.object
+        theme: PropTypes.object,
     };
 
     componentWillMount() {
-        Orientation.addOrientationListener(this.orientationDidChange);
+        Dimensions.addEventListener('change', this.orientationDidChange);
     }
 
     componentWillUnmount() {
-        Orientation.removeOrientationListener(this.orientationDidChange);
+        Dimensions.removeEventListener('change', this.orientationDidChange);
     }
 
-    goToLogin = () => {
+    goToLogin = preventDoubleTap(() => {
         const {intl, navigator, theme} = this.props;
         navigator.push({
             screen: 'Login',
@@ -51,10 +51,10 @@ class LoginOptions extends PureComponent {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
-            }
+                screenBackgroundColor: theme.centerChannelBg,
+            },
         });
-    };
+    });
 
     goToSSO = (ssoType) => {
         const {intl, navigator, theme} = this.props;
@@ -67,11 +67,11 @@ class LoginOptions extends PureComponent {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
+                screenBackgroundColor: theme.centerChannelBg,
             },
             passProps: {
-                ssoType
-            }
+                ssoType,
+            },
         });
     };
 
@@ -86,10 +86,10 @@ class LoginOptions extends PureComponent {
         if (!forceHideFromLocal && (config.EnableSignInWithEmail === 'true' || config.EnableSignInWithUsername === 'true')) {
             const backgroundColor = config.EmailLoginButtonColor || '#2389d7';
             const additionalStyle = {
-                backgroundColor
+                backgroundColor,
             };
 
-            if (config.hasOwnProperty('EmailLoginButtonBorderColor')) {
+            if (config.EmailLoginButtonBorderColor) {
                 additionalStyle.borderColor = config.EmailLoginButtonBorderColor;
             }
 
@@ -98,7 +98,7 @@ class LoginOptions extends PureComponent {
             return (
                 <Button
                     key='email'
-                    onPress={() => preventDoubleTap(this.goToLogin, this)}
+                    onPress={this.goToLogin}
                     containerStyle={[GlobalStyles.signupButton, additionalStyle]}
                 >
                     <FormattedText
@@ -120,10 +120,10 @@ class LoginOptions extends PureComponent {
         if (!forceHideFromLocal && license.IsLicensed === 'true' && config.EnableLdap === 'true') {
             const backgroundColor = config.LDAPLoginButtonColor || '#2389d7';
             const additionalStyle = {
-                backgroundColor
+                backgroundColor,
             };
 
-            if (config.hasOwnProperty('LDAPLoginButtonBorderColor')) {
+            if (config.LDAPLoginButtonBorderColor) {
                 additionalStyle.borderColor = config.LDAPLoginButtonBorderColor;
             }
 
@@ -149,7 +149,7 @@ class LoginOptions extends PureComponent {
             return (
                 <Button
                     key='ldap'
-                    onPress={() => preventDoubleTap(this.goToLogin, this)}
+                    onPress={this.goToLogin}
                     containerStyle={[GlobalStyles.signupButton, additionalStyle]}
                 >
                     {buttonText}
@@ -169,7 +169,7 @@ class LoginOptions extends PureComponent {
             return (
                 <Button
                     key='gitlab'
-                    onPress={() => preventDoubleTap(this.goToSSO, this, ViewTypes.GITLAB)}
+                    onPress={preventDoubleTap(() => this.goToSSO(ViewTypes.GITLAB))}
                     containerStyle={[GlobalStyles.signupButton, {backgroundColor: '#548'}]}
                 >
                     <Image
@@ -188,6 +188,41 @@ class LoginOptions extends PureComponent {
         return null;
     };
 
+    renderO365Option = () => {
+        const {config, license} = this.props;
+        const forceHideFromLocal = LocalConfig.HideO365LoginExperimental;
+        const o365Enabled = config.EnableSignUpWithOffice365 === 'true' && license.IsLicensed === 'true' && license.Office365OAuth === 'true';
+
+        if (!forceHideFromLocal && o365Enabled) {
+            const backgroundColor = config.EmailLoginButtonColor || '#2389d7';
+            const additionalStyle = {
+                backgroundColor,
+            };
+
+            if (config.EmailLoginButtonBorderColor) {
+                additionalStyle.borderColor = config.EmailLoginButtonBorderColor;
+            }
+
+            const textColor = config.EmailLoginButtonTextColor || 'white';
+
+            return (
+                <Button
+                    key='o365'
+                    onPress={preventDoubleTap(() => this.goToSSO(ViewTypes.OFFICE365))}
+                    containerStyle={[GlobalStyles.signupButton, additionalStyle]}
+                >
+                    <FormattedText
+                        id='signup.office365'
+                        defaultMessage='Office 365'
+                        style={[GlobalStyles.signupButtonText, {color: textColor}]}
+                    />
+                </Button>
+            );
+        }
+
+        return null;
+    };
+
     renderSamlOption = () => {
         const {config, license} = this.props;
         const forceHideFromLocal = LocalConfig.HideSAMLLoginExperimental;
@@ -196,10 +231,10 @@ class LoginOptions extends PureComponent {
             const backgroundColor = config.SamlLoginButtonColor || '#34a28b';
 
             const additionalStyle = {
-                backgroundColor
+                backgroundColor,
             };
 
-            if (config.SAMLLoginButtonBorderColor) {
+            if (config.SamlLoginButtonBorderColor) {
                 additionalStyle.borderColor = config.SamlLoginButtonBorderColor;
             }
 
@@ -208,7 +243,7 @@ class LoginOptions extends PureComponent {
             return (
                 <Button
                     key='saml'
-                    onPress={() => preventDoubleTap(this.goToSSO, this, ViewTypes.SAML)}
+                    onPress={preventDoubleTap(() => this.goToSSO(ViewTypes.SAML))}
                     containerStyle={[GlobalStyles.signupButton, additionalStyle]}
                 >
                     <Text
@@ -255,6 +290,7 @@ class LoginOptions extends PureComponent {
                 {this.renderLdapOption()}
                 {this.renderGitlabOption()}
                 {this.renderSamlOption()}
+                {this.renderO365Option()}
             </ScrollView>
         );
     }
@@ -263,15 +299,15 @@ class LoginOptions extends PureComponent {
 const style = StyleSheet.create({
     container: {
         backgroundColor: '#FFFFFF',
-        flex: 1
+        flex: 1,
     },
     innerContainer: {
         alignItems: 'center',
         flexDirection: 'column',
         justifyContent: 'center',
         paddingHorizontal: 15,
-        paddingVertical: 50
-    }
+        paddingVertical: 50,
+    },
 });
 
 export default injectIntl(LoginOptions);

@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {bindActionCreators} from 'redux';
 import {connect} from 'react-redux';
@@ -12,7 +12,7 @@ import {
     filterMembersInChannel,
     filterMembersNotInChannel,
     filterMembersInCurrentTeam,
-    getMatchTermForAtMention
+    getMatchTermForAtMention,
 } from 'app/selectors/autocomplete';
 import {getTheme} from 'mattermost-redux/selectors/entities/preferences';
 
@@ -44,15 +44,15 @@ function mapStateToProps(state, ownProps) {
         inChannel,
         outChannel,
         requestStatus: state.requests.users.autocompleteUsers.status,
-        theme: getTheme(state)
+        theme: getTheme(state),
     };
 }
 
 function mapDispatchToProps(dispatch) {
     return {
         actions: bindActionCreators({
-            autocompleteUsers
-        }, dispatch)
+            autocompleteUsers,
+        }, dispatch),
     };
 }
 

@@ -1,3 +1,5 @@
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 import {createSelector} from 'reselect';
 import {Platform} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
@@ -25,7 +27,7 @@ const getClientUpgrade = createSelector(
             downloadLink,
             forceUpgrade: LocalConfig.EnableForceMobileClientUpgrade,
             latestVersion,
-            minVersion
+            minVersion,
         };
     }
 );

@@ -1,44 +1,74 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {
-    Platform,
     ScrollView,
     Text,
     View,
-    Linking
+    Linking,
 } from 'react-native';
-import {injectIntl, intlShape} from 'react-intl';
+import {intlShape} from 'react-intl';
 
-import {getDirectChannelName} from 'mattermost-redux/utils/channel_utils';
 import {displayUsername} from 'mattermost-redux/utils/user_utils';
+import {getUserCurrentTimezone} from 'mattermost-redux/utils/timezone_utils';
 
 import ProfilePicture from 'app/components/profile_picture';
+import FormattedText from 'app/components/formatted_text';
+import FormattedTime from 'app/components/formatted_time';
 import StatusBar from 'app/components/status_bar';
+import BotTag from 'app/components/bot_tag';
 import {alertErrorWithFallback} from 'app/utils/general';
 import {changeOpacity, makeStyleSheetFromTheme, setNavigatorStyles} from 'app/utils/theme';
+import {t} from 'app/utils/i18n';
 
 import UserProfileRow from './user_profile_row';
 import Config from 'assets/config';
 
-class UserProfile extends PureComponent {
+export default class UserProfile extends PureComponent {
     static propTypes = {
         actions: PropTypes.shape({
             makeDirectChannel: PropTypes.func.isRequired,
-            setChannelDisplayName: PropTypes.func.isRequired
+            setChannelDisplayName: PropTypes.func.isRequired,
+            loadBot: PropTypes.func.isRequired,
         }).isRequired,
         config: PropTypes.object.isRequired,
-        currentChannel: PropTypes.object.isRequired,
         currentDisplayName: PropTypes.string,
-        currentUserId: PropTypes.string.isRequired,
-        intl: intlShape.isRequired,
         navigator: PropTypes.object,
         teammateNameDisplay: PropTypes.string,
         theme: PropTypes.object.isRequired,
-        user: PropTypes.object.isRequired
+        user: PropTypes.object.isRequired,
+        bot: PropTypes.object,
+        militaryTime: PropTypes.bool.isRequired,
+        enableTimezone: PropTypes.bool.isRequired,
+        isMyUser: PropTypes.bool.isRequired,
+        fromSettings: PropTypes.bool,
     };
+
+    static contextTypes = {
+        intl: intlShape.isRequired,
+    };
+
+    rightButton = {
+        id: 'edit-profile',
+        showAsAction: 'always',
+    };
+
+    constructor(props, context) {
+        super(props);
+
+        if (props.isMyUser) {
+            this.rightButton.title = context.intl.formatMessage({id: 'mobile.routes.user_profile.edit', defaultMessage: 'Edit'});
+
+            const buttons = {
+                rightButtons: [this.rightButton],
+            };
+
+            props.navigator.setOnNavigatorEvent(this.onNavigatorEvent);
+            props.navigator.setButtons(buttons);
+        }
+    }
 
     componentWillReceiveProps(nextProps) {
         if (this.props.theme !== nextProps.theme) {
@@ -46,24 +76,37 @@ class UserProfile extends PureComponent {
         }
     }
 
-    close = () => {
-        const {navigator} = this.props;
-
-        navigator.popToRoot({
-            animated: true
-        });
-
-        if (Platform.OS === 'android') {
-            navigator.dismissModal({
-                animationType: 'slide-down'
-            });
+    componentDidMount() {
+        if (this.props.user && this.props.user.is_bot) {
+            this.props.actions.loadBot(this.props.user.id);
         }
-    };
+    }
 
-    displaySendMessageOption = () => {
-        const {currentChannel, currentUserId, user} = this.props;
+    close = () => {
+        const {navigator, theme} = this.props;
 
-        return currentUserId !== user.id && currentChannel.name !== getDirectChannelName(currentUserId, user.id);
+        if (this.props.fromSettings) {
+            navigator.dismissModal({
+                animationType: 'slide-down',
+            });
+            return;
+        }
+
+        navigator.resetTo({
+            screen: 'Channel',
+            animated: true,
+            navigatorStyle: {
+                animated: true,
+                animationType: 'fade',
+                navBarHidden: true,
+                statusBarHidden: false,
+                statusBarHideWithNavBar: false,
+                screenBackgroundColor: theme.centerChannelBg,
+            },
+            passProps: {
+                disableTermsModal: true,
+            },
+        });
     };
 
     getDisplayName = () => {
@@ -73,7 +116,17 @@ class UserProfile extends PureComponent {
         const displayName = displayUsername(user, teammateNameDisplay);
 
         if (displayName) {
-            return <Text style={style.displayName}>{displayName}</Text>;
+            return (
+                <View style={style.indicatorContainer}>
+                    <Text style={style.displayName}>
+                        {displayName}
+                    </Text>
+                    <BotTag
+                        show={Boolean(user.is_bot)}
+                        theme={theme}
+                    />
+                </View>
+            );
         }
 
         return null;
@@ -95,8 +148,37 @@ class UserProfile extends PureComponent {
         return null;
     };
 
+    buildTimezoneBlock = () => {
+        const {theme, user, militaryTime} = this.props;
+        const style = createStyleSheet(theme);
+
+        const currentTimezone = getUserCurrentTimezone(user.timezone);
+        if (!currentTimezone) {
+            return null;
+        }
+        const nowDate = new Date();
+
+        return (
+            <View>
+                <FormattedText
+                    id='mobile.routes.user_profile.local_time'
+                    defaultMessage='LOCAL TIME'
+                    style={style.header}
+                />
+                <Text style={style.text}>
+                    <FormattedTime
+                        timeZone={currentTimezone}
+                        hour12={!militaryTime}
+                        value={nowDate}
+                    />
+                </Text>
+            </View>
+        );
+    };
+
     sendMessage = async () => {
-        const {actions, currentDisplayName, intl, teammateNameDisplay, user} = this.props;
+        const {intl} = this.context;
+        const {actions, currentDisplayName, teammateNameDisplay, user} = this.props;
 
         // save the current channel display name in case it fails
         const currentChannelDisplayName = currentDisplayName;
@@ -111,11 +193,11 @@ class UserProfile extends PureComponent {
                 intl,
                 result.error,
                 {
-                    id: 'mobile.open_dm.error',
-                    defaultMessage: "We couldn't open a direct message with {displayName}. Please check your connection and try again."
+                    id: t('mobile.open_dm.error'),
+                    defaultMessage: "We couldn't open a direct message with {displayName}. Please check your connection and try again.",
                 },
                 {
-                    displayName: userDisplayName
+                    displayName: userDisplayName,
                 }
             );
         } else {
@@ -132,6 +214,44 @@ class UserProfile extends PureComponent {
             hydrated = hydrated.replace(/{username}/, username);
             Linking.openURL(hydrated);
         };
+    };
+
+    goToEditProfile = () => {
+        const {user: currentUser} = this.props;
+        const {formatMessage} = this.context.intl;
+        const commandType = 'Push';
+
+        const {navigator, theme} = this.props;
+        const options = {
+            screen: 'EditProfile',
+            title: formatMessage({id: 'mobile.routes.edit_profile', defaultMessage: 'Edit Profile'}),
+            animated: true,
+            backButtonTitle: '',
+            passProps: {currentUser, commandType},
+            navigatorStyle: {
+                navBarTextColor: theme.sidebarHeaderTextColor,
+                navBarBackgroundColor: theme.sidebarHeaderBg,
+                navBarButtonColor: theme.sidebarHeaderTextColor,
+                screenBackgroundColor: theme.centerChannelBg,
+            },
+        };
+
+        requestAnimationFrame(() => {
+            navigator.push(options);
+        });
+    };
+
+    onNavigatorEvent = (event) => {
+        if (event.type === 'NavBarButtonPress') {
+            switch (event.id) {
+            case this.rightButton.id:
+                this.goToEditProfile();
+                break;
+            case 'close-settings':
+                this.close();
+                break;
+            }
+        }
     };
 
     renderAdditionalOptions = () => {
@@ -162,10 +282,36 @@ class UserProfile extends PureComponent {
         });
 
         return additionalOptions;
+    };
+
+    renderDetailsBlock = (style) => {
+        if (this.props.user.is_bot) {
+            if (!this.props.bot) {
+                return null;
+            }
+            return (
+                <View style={style.content}>
+                    <View>
+                        <Text style={style.header}>{'DESCRIPTION'}</Text>
+                        <Text style={style.text}>{this.props.bot.description || ''}</Text>
+                    </View>
+                </View>
+            );
+        }
+
+        return (
+            <View style={style.content}>
+                {this.props.enableTimezone && this.buildTimezoneBlock()}
+                {this.buildDisplayBlock('username')}
+                {this.props.config.ShowEmailAddress === 'true' && this.buildDisplayBlock('email')}
+                {this.buildDisplayBlock('nickname')}
+                {this.buildDisplayBlock('position')}
+            </View>
+        );
     }
 
     render() {
-        const {config, theme, user} = this.props;
+        const {theme, user} = this.props;
         const style = createStyleSheet(theme);
 
         if (!user) {
@@ -188,21 +334,15 @@ class UserProfile extends PureComponent {
                         {this.getDisplayName()}
                         <Text style={style.username}>{`@${user.username}`}</Text>
                     </View>
-                    <View style={style.content}>
-                        {this.buildDisplayBlock('username')}
-                        {config.ShowEmailAddress === 'true' && this.buildDisplayBlock('email')}
-                        {this.buildDisplayBlock('position')}
-                    </View>
-                    {this.displaySendMessageOption() &&
+                    {this.renderDetailsBlock(style)}
                     <UserProfileRow
                         action={this.sendMessage}
                         defaultMessage='Send Message'
                         icon='paper-plane-o'
                         iconType='fontawesome'
-                        textId='mobile.routes.user_profile.send_message'
+                        textId={t('mobile.routes.user_profile.send_message')}
                         theme={theme}
                     />
-                    }
                     {this.renderAdditionalOptions()}
                 </ScrollView>
             </View>
@@ -213,44 +353,46 @@ class UserProfile extends PureComponent {
 const createStyleSheet = makeStyleSheetFromTheme((theme) => {
     return {
         container: {
-            flex: 1
+            flex: 1,
         },
         content: {
             marginBottom: 25,
-            marginHorizontal: 15
+            marginHorizontal: 15,
         },
         displayName: {
-            marginTop: 15,
             color: theme.centerChannelColor,
             fontSize: 17,
-            fontWeight: '600'
+            fontWeight: '600',
         },
         header: {
             fontSize: 13,
             fontWeight: '600',
             color: changeOpacity(theme.centerChannelColor, 0.5),
             marginTop: 25,
-            marginBottom: 10
+            marginBottom: 10,
         },
         scrollView: {
             flex: 1,
-            backgroundColor: theme.centerChannelBg
+            backgroundColor: theme.centerChannelBg,
         },
         text: {
             fontSize: 15,
-            color: theme.centerChannelColor
+            color: theme.centerChannelColor,
         },
         top: {
             padding: 25,
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
         },
         username: {
             marginTop: 15,
             color: theme.centerChannelColor,
-            fontSize: 15
-        }
+            fontSize: 15,
+        },
+        indicatorContainer: {
+            marginTop: 15,
+            flexDirection: 'row',
+        },
     };
 });
 
-export default injectIntl(UserProfile);

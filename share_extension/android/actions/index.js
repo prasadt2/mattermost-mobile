@@ -1,21 +1,23 @@
-// Copyright (c) 2018-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {fetchMyChannelsAndMembers} from 'mattermost-redux/actions/channels';
+import {getRedirectChannelNameForTeam, getChannelsNameMapInTeam} from 'mattermost-redux/selectors/entities/channels';
+import {getChannelByName} from 'mattermost-redux/utils/channel_utils';
 
+import {loadProfilesAndTeamMembersForDMSidebar} from 'app/actions/views/channel';
 import {ViewTypes} from 'app/constants';
-import {getDefaultChannelForTeam} from 'share_extension/android/selectors';
 
 export function getTeamChannels(teamId) {
     return async (dispatch, getState) => {
-        let defaultChannel = getDefaultChannelForTeam(getState(), teamId);
+        await dispatch(fetchMyChannelsAndMembers(teamId));
+        dispatch(loadProfilesAndTeamMembersForDMSidebar(teamId));
 
-        if (!defaultChannel) {
-            await fetchMyChannelsAndMembers(teamId)(dispatch, getState);
-            defaultChannel = getDefaultChannelForTeam(getState(), teamId);
-        }
+        const state = getState();
+        const channelsInTeam = getChannelsNameMapInTeam(state, teamId);
+        const redirectChannel = getChannelByName(channelsInTeam, getRedirectChannelNameForTeam(state, teamId));
 
-        return defaultChannel.id;
+        return redirectChannel.id;
     };
 }
 
@@ -23,7 +25,7 @@ export function extensionSelectTeamId(teamId) {
     return async (dispatch, getState) => {
         dispatch({
             type: ViewTypes.EXTENSION_SELECTED_TEAM_ID,
-            data: teamId
+            data: teamId,
         }, getState);
     };
 }

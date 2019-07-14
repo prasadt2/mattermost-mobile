@@ -1,12 +1,12 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React, {PureComponent} from 'react';
 import PropTypes from 'prop-types';
 import {
-    View,
     Image,
-    StyleSheet
+    View,
+    StyleSheet,
 } from 'react-native';
 
 import * as Utils from 'mattermost-redux/utils/file_utils';
@@ -32,23 +32,26 @@ const ICON_PATH_FROM_FILE_TYPE = {
     presentation: pptIcon,
     spreadsheet: excelIcon,
     video: videoIcon,
-    word: wordIcon
+    word: wordIcon,
 };
 
 export default class FileAttachmentIcon extends PureComponent {
     static propTypes = {
+        backgroundColor: PropTypes.string,
         file: PropTypes.object.isRequired,
         iconHeight: PropTypes.number,
         iconWidth: PropTypes.number,
+        onCaptureRef: PropTypes.func,
         wrapperHeight: PropTypes.number,
-        wrapperWidth: PropTypes.number
+        wrapperWidth: PropTypes.number,
     };
 
     static defaultProps = {
+        backgroundColor: '#fff',
         iconHeight: 60,
         iconWidth: 60,
-        wrapperHeight: 100,
-        wrapperWidth: 100
+        wrapperHeight: 80,
+        wrapperWidth: 80,
     };
 
     getFileIconPath(file) {
@@ -56,16 +59,26 @@ export default class FileAttachmentIcon extends PureComponent {
         return ICON_PATH_FROM_FILE_TYPE[fileType] || ICON_PATH_FROM_FILE_TYPE.other;
     }
 
+    handleCaptureRef = (ref) => {
+        const {onCaptureRef} = this.props;
+
+        if (onCaptureRef) {
+            onCaptureRef(ref);
+        }
+    };
+
     render() {
-        const {file, iconHeight, iconWidth, wrapperHeight, wrapperWidth} = this.props;
+        const {backgroundColor, file, iconHeight, iconWidth, wrapperHeight, wrapperWidth} = this.props;
         const source = this.getFileIconPath(file);
 
         return (
-            <View style={[styles.fileIconWrapper, {height: wrapperHeight, width: wrapperWidth}]}>
+            <View
+                ref={this.handleCaptureRef}
+                style={[styles.fileIconWrapper, {backgroundColor, height: wrapperHeight, width: wrapperWidth}]}
+            >
                 <Image
-                    style={{height: iconHeight, width: iconWidth}}
+                    style={[styles.icon, {height: iconHeight, width: iconWidth}]}
                     source={source}
-                    defaultSource={genericIcon}
                 />
             </View>
         );
@@ -76,6 +89,12 @@ const styles = StyleSheet.create({
     fileIconWrapper: {
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#fff'
-    }
+        borderTopLeftRadius: 2,
+        borderBottomLeftRadius: 2,
+    },
+    icon: {
+        borderTopLeftRadius: 2,
+        borderBottomLeftRadius: 2,
+        backgroundColor: '#fff',
+    },
 });

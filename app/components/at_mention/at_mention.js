@@ -1,13 +1,16 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import React from 'react';
 import PropTypes from 'prop-types';
-import {Clipboard, Text} from 'react-native';
+import {Clipboard, Platform, Text} from 'react-native';
 import {intlShape} from 'react-intl';
+
+import {displayUsername} from 'mattermost-redux/utils/user_utils';
 
 import CustomPropTypes from 'app/constants/custom_prop_types';
 import mattermostManaged from 'app/mattermost_managed';
+import BottomSheet from 'app/utils/bottom_sheet';
 
 export default class AtMention extends React.PureComponent {
     static propTypes = {
@@ -15,33 +18,31 @@ export default class AtMention extends React.PureComponent {
         mentionName: PropTypes.string.isRequired,
         mentionStyle: CustomPropTypes.Style,
         navigator: PropTypes.object.isRequired,
-        onLongPress: PropTypes.func.isRequired,
         onPostPress: PropTypes.func,
         textStyle: CustomPropTypes.Style,
+        teammateNameDisplay: PropTypes.string,
         theme: PropTypes.object.isRequired,
-        usersByUsername: PropTypes.object.isRequired
+        usersByUsername: PropTypes.object.isRequired,
     };
 
     static contextTypes = {
-        intl: intlShape
-    }
+        intl: intlShape,
+    };
 
     constructor(props) {
         super(props);
 
-        const userDetails = this.getUserDetailsFromMentionName(props);
+        const user = this.getUserDetailsFromMentionName(props);
         this.state = {
-            username: userDetails.username,
-            id: userDetails.id
+            user,
         };
     }
 
     componentWillReceiveProps(nextProps) {
         if (nextProps.mentionName !== this.props.mentionName || nextProps.usersByUsername !== this.props.usersByUsername) {
-            const userDetails = this.getUserDetailsFromMentionName(nextProps);
+            const user = this.getUserDetailsFromMentionName(nextProps);
             this.setState({
-                username: userDetails.username,
-                id: userDetails.id
+                user,
             });
         }
     }
@@ -49,34 +50,35 @@ export default class AtMention extends React.PureComponent {
     goToUserProfile = () => {
         const {navigator, theme} = this.props;
         const {intl} = this.context;
-
-        navigator.push({
+        const options = {
             screen: 'UserProfile',
             title: intl.formatMessage({id: 'mobile.routes.user_profile', defaultMessage: 'Profile'}),
             animated: true,
             backButtonTitle: '',
             passProps: {
-                userId: this.state.id
+                userId: this.state.user.id,
             },
             navigatorStyle: {
                 navBarTextColor: theme.sidebarHeaderTextColor,
                 navBarBackgroundColor: theme.sidebarHeaderBg,
                 navBarButtonColor: theme.sidebarHeaderTextColor,
-                screenBackgroundColor: theme.centerChannelBg
-            }
-        });
+                screenBackgroundColor: theme.centerChannelBg,
+            },
+        };
+
+        if (Platform.OS === 'ios') {
+            navigator.push(options);
+        } else {
+            navigator.showModal(options);
+        }
     };
 
     getUserDetailsFromMentionName(props) {
-        let mentionName = props.mentionName;
+        let mentionName = props.mentionName.toLowerCase();
 
         while (mentionName.length > 0) {
             if (props.usersByUsername.hasOwnProperty(mentionName)) {
-                const user = props.usersByUsername[mentionName];
-                return {
-                    username: user.username,
-                    id: user.id
-                };
+                return props.usersByUsername[mentionName];
             }
 
             // Repeatedly trim off trailing punctuation in case this is at the end of a sentence
@@ -88,43 +90,50 @@ export default class AtMention extends React.PureComponent {
         }
 
         return {
-            username: ''
+            username: '',
         };
     }
 
     handleLongPress = async () => {
-        const {intl} = this.context;
+        const {formatMessage} = this.context.intl;
 
-        const config = await mattermostManaged.getLocalConfig();
+        const config = mattermostManaged.getCachedConfig();
 
-        let action;
-        if (config.copyAndPasteProtection !== 'false') {
-            action = {
-                text: intl.formatMessage({
-                    id: 'mobile.mention.copy_mention',
-                    defaultMessage: 'Copy Mention'
-                }),
-                onPress: this.handleCopyMention
-            };
+        if (config?.copyAndPasteProtection !== 'true') {
+            const cancelText = formatMessage({id: 'mobile.post.cancel', defaultMessage: 'Cancel'});
+            const actionText = formatMessage({id: 'mobile.mention.copy_mention', defaultMessage: 'Copy Mention'});
+
+            BottomSheet.showBottomSheetWithOptions({
+                options: [actionText, cancelText],
+                cancelButtonIndex: 1,
+            }, (value) => {
+                if (value !== 1) {
+                    this.handleCopyMention();
+                }
+            });
         }
-
-        this.props.onLongPress(action);
-    }
+    };
 
     handleCopyMention = () => {
-        const {username} = this.state;
+        const {user} = this.state;
+        const {mentionName} = this.props;
+        let username = mentionName;
+        if (user.username) {
+            username = user.username;
+        }
+
         Clipboard.setString(`@${username}`);
-    }
+    };
 
     render() {
-        const {isSearchResult, mentionName, mentionStyle, onPostPress, textStyle} = this.props;
-        const username = this.state.username;
+        const {isSearchResult, mentionName, mentionStyle, onPostPress, teammateNameDisplay, textStyle} = this.props;
+        const {user} = this.state;
 
-        if (!username) {
+        if (!user.username) {
             return <Text style={textStyle}>{'@' + mentionName}</Text>;
         }
 
-        const suffix = this.props.mentionName.substring(username.length);
+        const suffix = this.props.mentionName.substring(user.username.length);
 
         return (
             <Text
@@ -133,7 +142,7 @@ export default class AtMention extends React.PureComponent {
                 onLongPress={this.handleLongPress}
             >
                 <Text style={mentionStyle}>
-                    {'@' + username}
+                    {'@' + displayUsername(user, teammateNameDisplay)}
                 </Text>
                 {suffix}
             </Text>

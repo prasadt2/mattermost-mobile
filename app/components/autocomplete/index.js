@@ -1,5 +1,5 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {connect} from 'react-redux';
 
@@ -13,8 +13,10 @@ function mapStateToProps(state) {
     const {deviceHeight} = getDimensions(state);
     return {
         deviceHeight,
-        theme: getTheme(state)
+        theme: getTheme(state),
     };
 }
 
-export default connect(mapStateToProps, null, null, {withRef: true})(Autocomplete);
+export const AUTOCOMPLETE_MAX_HEIGHT = 200;
+
+export default connect(mapStateToProps, null, null, {forwardRef: true})(Autocomplete);

@@ -1,32 +1,22 @@
-// Copyright (c) 2017-present Mattermost, Inc. All Rights Reserved.
-// See License.txt for license information.
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
 
 import {connect} from 'react-redux';
 import {createSelector} from 'reselect';
 
-import {General, RequestStatus} from 'mattermost-redux/constants';
+import {General} from 'mattermost-redux/constants';
 import {makeGetChannel} from 'mattermost-redux/selectors/entities/channels';
 import {getCurrentUserId, getUser, makeGetProfilesInChannel} from 'mattermost-redux/selectors/entities/users';
 
 import {getTheme} from 'mattermost-redux/selectors/entities/preferences';
+
+import {getChannelMembersForDm} from 'app/selectors/channel';
 
 import ChannelIntro from './channel_intro';
 
 function makeMapStateToProps() {
     const getChannel = makeGetChannel();
     const getProfilesInChannel = makeGetProfilesInChannel();
-
-    const getOtherUserIdForDm = createSelector(
-        (state, channel) => channel,
-        getCurrentUserId,
-        (channel, currentUserId) => {
-            if (!channel) {
-                return '';
-            }
-
-            return channel.name.split('__').find((m) => m !== currentUserId) || currentUserId;
-        }
-    );
 
     const getChannelMembers = createSelector(
         getCurrentUserId,
@@ -37,24 +27,11 @@ function makeMapStateToProps() {
         }
     );
 
-    const getChannelMembersForDm = createSelector(
-        (state, channel) => getUser(state, getOtherUserIdForDm(state, channel)),
-        (otherUser) => {
-            if (!otherUser) {
-                return [];
-            }
-
-            return [otherUser];
-        }
-    );
-
     return function mapStateToProps(state, ownProps) {
         const currentChannel = getChannel(state, {id: ownProps.channelId}) || {};
-        const {status: getPostsRequestStatus} = state.requests.posts.getPosts;
 
         let currentChannelMembers;
         let creator;
-        let postsInChannel;
 
         if (currentChannel) {
             if (currentChannel.type === General.DM_CHANNEL) {
@@ -64,15 +41,13 @@ function makeMapStateToProps() {
             }
 
             creator = getUser(state, currentChannel.creator_id);
-            postsInChannel = state.entities.posts.postsInChannel[currentChannel.Id];
         }
 
         return {
             creator,
             currentChannel,
             currentChannelMembers,
-            isLoadingPosts: (!postsInChannel || postsInChannel.length === 0) && getPostsRequestStatus === RequestStatus.STARTED,
-            theme: getTheme(state)
+            theme: getTheme(state),
         };
     };
 }
